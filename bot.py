@@ -1,9 +1,6 @@
-import requests
-import time
-import io
-import os
+
+import requests, time, io, os, subprocess, tempfile, hashlib
 from datetime import datetime
-from PIL import Image, ImageDraw, ImageFont
 
 TELEGRAM_TOKEN = "8601521492:AAGx10bdhu3UeEMAfKh0NlrdDUcxbLK85o8"
 CHAT_ID = "351609302"
@@ -11,507 +8,349 @@ LIVESCORE_KEY = "qgHY8ERxSp9JnkCo"
 LIVESCORE_SECRET = "wI6jj9Z2SRUKDtG3Jn1R2ToVixEGSh4p"
 ODDS_API_KEY = "e610e4b32d5038e6c54a1316a571cda0"
 STAKE_LINK = "https://stake.com/?c=2e44068c9b"
+XBET_LINK = "https://1xbet.com"
 LOGO_PATH = "/home/Sharkbet/sharkbet_logo.png"
 
-CRITERES = {
-    "minute_debut_1": 38, "minute_fin_1": 45,
-    "minute_debut_2": 75, "minute_fin_2": 90,
-    "da_min": 5, "tirs_min": 3, "corners_min": 1,
-    "pression_min": 65, "cote_min": 2.40, "forme_min": 2,
-}
-
+CRITERES = {"minute_debut_1":38,"minute_fin_1":45,"minute_debut_2":75,"minute_fin_2":90,"da_min":5,"tirs_min":3,"corners_min":1,"pression_min":65,"cote_min":2.40,"forme_min":2}
 historique_stats = {}
 alertes_envoyees = set()
 cache_odds = {}
 
-ODDS_LEAGUES = [
-    "soccer_epl", "soccer_spain_la_liga", "soccer_italy_serie_a",
-    "soccer_germany_bundesliga", "soccer_france_ligue_one",
-    "soccer_uefa_champs_league", "soccer_uefa_europa_league",
-    "soccer_portugal_primeira_liga", "soccer_turkey_super_lig",
-    "soccer_netherlands_eredivisie", "soccer_sweden_allsvenskan",
-    "soccer_japan_j_league", "soccer_china_superleague",
-    "soccer_korea_kleague1", "soccer_brazil_campeonato",
-    "soccer_mexico_ligamx", "soccer_argentina_primera_division",
-    "soccer_denmark_superliga", "soccer_norway_eliteserien",
-    "soccer_austria_bundesliga", "soccer_poland_ekstraklasa"
-]
+ODDS_LEAGUES = ["soccer_epl","soccer_spain_la_liga","soccer_italy_serie_a","soccer_germany_bundesliga","soccer_france_ligue_one","soccer_uefa_champs_league","soccer_uefa_europa_league","soccer_portugal_primeira_liga","soccer_turkey_super_lig","soccer_netherlands_eredivisie","soccer_sweden_allsvenskan","soccer_japan_j_league","soccer_china_superleague","soccer_korea_kleague1","soccer_brazil_campeonato","soccer_mexico_ligamx","soccer_argentina_primera_division","soccer_denmark_superliga","soccer_norway_eliteserien","soccer_austria_bundesliga","soccer_poland_ekstraklasa"]
 
+TEAM_COLORS = {"arsenal":("#EF0107","#9C0000","AFC"),"chelsea":("#034694","#DBA111","CFC"),"manchester city":("#6CABDD","#1c2f5e","MCI"),"manchester united":("#DA291C","#FBE122","MUN"),"liverpool":("#C8102E","#00B2A9","LIV"),"tottenham":("#132257","#FFFFFF","TOT"),"barcelona":("#A50044","#004D98","FCB"),"real madrid":("#FEBE10","#FFFFFF","RMA"),"juventus":("#000000","#FFFFFF","JUV"),"psg":("#004170","#DA291C","PSG"),"paris":("#004170","#DA291C","PSG"),"bayern":("#DC052D","#FFFFFF","BAY"),"dortmund":("#FDE100","#000000","BVB"),"inter":("#003DA5","#000000","INT"),"ac milan":("#FB090B","#000000","MIL"),"atletico":("#CE3524","#272E61","ATL"),"nottm":("#DD0000","#FFFFFF","NFO"),"forest":("#DD0000","#FFFFFF","NFO"),"newcastle":("#241F20","#41B6E6","NEW"),"west ham":("#7A263A","#1BB1E7","WHU"),"aston":("#95BFE5","#670E36","AVL"),"benfica":("#CC0000","#FFFFFF","BEN"),"porto":("#003087","#FFFFFF","POR"),"sevilla":("#D40000","#FFFFFF","SEV"),"roma":("#8E0B16","#F5C518","ROM"),"napoli":("#12A0D7","#FFFFFF","NAP"),"celtic":("#16A34A","#FFFFFF","CEL"),"rangers":("#003380","#FFFFFF","RAN")}
+
+def get_team_info(name):
+    nl = name.lower()
+    for k,v in TEAM_COLORS.items():
+        if k in nl: return v
+    h = int(hashlib.md5(name.encode()).hexdigest()[:6],16)
+    parts = name.split()
+    ini = (parts[0][0]+(parts[-1][0] if len(parts)>1 else name[1])).upper()
+    return (f"#{(h>>16)&0xFF:02x}{(h>>8)&0xFF:02x}{h&0xFF:02x}","#FFFFFF",ini)
+
+def get_over_line(hs,as_):
+    t=hs+as_
+    return "Over "+str(t)+".5" if t>0 else "Over 0.5"
+
+def get_logo_b64():
+    try:
+        import base64
+        if os.path.exists(LOGO_PATH):
+            with open(LOGO_PATH,"rb") as f: return base64.b64encode(f.read()).decode()
+    except: pass
+    return ""
 
 def envoyer_telegram_texte(msg):
-    url = "https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendMessage"
     try:
-        r = requests.post(url, json={"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML", "disable_web_page_preview": True}, timeout=10)
-        return r.status_code == 200
+        r=requests.post("https://api.telegram.org/bot"+TELEGRAM_TOKEN+"/sendMessage",json={"chat_id":CHAT_ID,"text":msg,"parse_mode":"HTML","disable_web_page_preview":True},timeout=10)
+        return r.status_code==200
     except Exception as e:
-        print("ERR telegram: " + str(e))
-        return False
+        print("ERR telegram:"+str(e)); return False
 
-
-def envoyer_telegram_image(img_bytes, caption=""):
-    url = "https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendPhoto"
+def envoyer_telegram_image(img_bytes,caption=""):
     try:
-        r = requests.post(url, data={"chat_id": CHAT_ID, "caption": caption}, files={"photo": ("alert.png", img_bytes, "image/png")}, timeout=30)
-        return r.status_code == 200
+        r=requests.post("https://api.telegram.org/bot"+TELEGRAM_TOKEN+"/sendPhoto",data={"chat_id":CHAT_ID,"caption":caption},files={"photo":("alert.png",img_bytes,"image/png")},timeout=30)
+        return r.status_code==200
     except Exception as e:
-        print("ERR image: " + str(e))
-        return False
-
+        print("ERR image:"+str(e)); return False
 
 def get_matchs_live():
     try:
-        r = requests.get("https://livescore-api.com/api-client/scores/live.json", params={"key": LIVESCORE_KEY, "secret": LIVESCORE_SECRET}, timeout=15)
-        if r.status_code == 200:
-            data = r.json()
-            if data.get("success"):
-                return data.get("data", {}).get("match", [])
+        r=requests.get("https://livescore-api.com/api-client/scores/live.json",params={"key":LIVESCORE_KEY,"secret":LIVESCORE_SECRET},timeout=15)
+        if r.status_code==200:
+            d=r.json()
+            if d.get("success"): return d.get("data",{}).get("match",[])
         return []
     except Exception as e:
-        print("ERR live: " + str(e))
-        return []
-
+        print("ERR live:"+str(e)); return []
 
 def get_stats(match_id):
-    s = {
-        "tirs_home": 0, "tirs_away": 0,
-        "tirs_cadres_home": 0, "tirs_cadres_away": 0,
-        "corners_home": 0, "corners_away": 0,
-        "possession_home": 50, "possession_away": 50,
-        "da_home": 0, "da_away": 0,
-        "coups_francs_home": 0, "coups_francs_away": 0,
-        "cartons_jaunes_home": 0, "cartons_jaunes_away": 0,
-        "cartons_rouges_home": 0, "cartons_rouges_away": 0
-    }
+    s={"tirs_home":0,"tirs_away":0,"tirs_cadres_home":0,"tirs_cadres_away":0,"corners_home":0,"corners_away":0,"possession_home":50,"possession_away":50,"da_home":0,"da_away":0,"coups_francs_home":0,"coups_francs_away":0,"cartons_jaunes_home":0,"cartons_jaunes_away":0,"cartons_rouges_home":0,"cartons_rouges_away":0}
     try:
-        r = requests.get("https://livescore-api.com/api-client/statistics/matches.json", params={"key": LIVESCORE_KEY, "secret": LIVESCORE_SECRET, "match_id": match_id}, timeout=10)
-        if r.status_code != 200:
-            return s
-        data = r.json()
-        if not data.get("success"):
-            return s
-        for stat in data.get("data", []):
-            t = stat.get("type", "").lower()
-            h = int(stat.get("home", 0) or 0)
-            a = int(stat.get("away", 0) or 0)
-            if "shots_on_target" in t:
-                s["tirs_cadres_home"] = h
-                s["tirs_cadres_away"] = a
-            elif "attempts_on_goal" in t or "shots" in t:
-                s["tirs_home"] = h
-                s["tirs_away"] = a
-            elif "corner" in t:
-                s["corners_home"] = h
-                s["corners_away"] = a
-            elif "possesion" in t or "possession" in t:
-                s["possession_home"] = h
-                s["possession_away"] = a
-            elif "dangerous" in t:
-                s["da_home"] = h
-                s["da_away"] = a
-            elif "free_kick" in t or "freekick" in t:
-                s["coups_francs_home"] = h
-                s["coups_francs_away"] = a
-            elif "yellow" in t:
-                s["cartons_jaunes_home"] = h
-                s["cartons_jaunes_away"] = a
-            elif "red" in t:
-                s["cartons_rouges_home"] = h
-                s["cartons_rouges_away"] = a
-    except Exception as e:
-        print("ERR stats: " + str(e))
+        r=requests.get("https://livescore-api.com/api-client/statistics/matches.json",params={"key":LIVESCORE_KEY,"secret":LIVESCORE_SECRET,"match_id":match_id},timeout=10)
+        if r.status_code!=200: return s
+        d=r.json()
+        if not d.get("success"): return s
+        for stat in d.get("data",[]):
+            t=stat.get("type","").lower(); h=int(stat.get("home",0) or 0); a=int(stat.get("away",0) or 0)
+            if "shots_on_target" in t: s["tirs_cadres_home"]=h; s["tirs_cadres_away"]=a
+            elif "attempts_on_goal" in t or "shots" in t: s["tirs_home"]=h; s["tirs_away"]=a
+            elif "corner" in t: s["corners_home"]=h; s["corners_away"]=a
+            elif "possesion" in t or "possession" in t: s["possession_home"]=h; s["possession_away"]=a
+            elif "dangerous" in t: s["da_home"]=h; s["da_away"]=a
+            elif "free_kick" in t or "freekick" in t: s["coups_francs_home"]=h; s["coups_francs_away"]=a
+            elif "yellow" in t: s["cartons_jaunes_home"]=h; s["cartons_jaunes_away"]=a
+            elif "red" in t: s["cartons_rouges_home"]=h; s["cartons_rouges_away"]=a
+    except Exception as e: print("ERR stats:"+str(e))
     return s
 
-
-def get_odds(home, away):
-    cle = home + "_" + away
+def get_odds(home,away):
+    cle=home+"_"+away
     if cle in cache_odds:
-        ts, d = cache_odds[cle]
-        if time.time() - ts < 60:
-            return d
+        ts,d=cache_odds[cle]
+        if time.time()-ts<60: return d
     for league in ODDS_LEAGUES:
         try:
-            r = requests.get("https://api.the-odds-api.com/v4/sports/" + league + "/odds/", params={"apiKey": ODDS_API_KEY, "regions": "eu", "markets": "h2h", "oddsFormat": "decimal"}, timeout=10)
-            if r.status_code != 200:
-                continue
+            r=requests.get("https://api.the-odds-api.com/v4/sports/"+league+"/odds/",params={"apiKey":ODDS_API_KEY,"regions":"eu","markets":"h2h,totals","oddsFormat":"decimal"},timeout=10)
+            if r.status_code!=200: continue
             for ev in r.json():
-                h = ev.get("home_team", "").lower()
-                a = ev.get("away_team", "").lower()
+                h=ev.get("home_team","").lower(); a=ev.get("away_team","").lower()
                 if home.lower()[:4] in h and away.lower()[:4] in a:
-                    for bk in ev.get("bookmakers", []):
-                        for mk in bk.get("markets", []):
-                            if mk.get("key") != "h2h":
-                                continue
-                            out = {o["name"]: o["price"] for o in mk.get("outcomes", [])}
-                            hc = out.get(ev["home_team"], 0)
-                            ac = out.get(ev["away_team"], 0)
-                            dc = out.get("Draw", 0)
-                            res = {"home_cote": round(hc, 2), "away_cote": round(ac, 2), "draw_cote": round(dc, 2), "favori_home": hc <= ac}
-                            cache_odds[cle] = (time.time(), res)
-                            return res
-        except Exception:
-            continue
+                    res={"home_cote":0,"away_cote":0,"draw_cote":0,"over_cote":0,"favori_home":True}
+                    for bk in ev.get("bookmakers",[]):
+                        for mk in bk.get("markets",[]):
+                            if mk.get("key")=="h2h":
+                                out={o["name"]:o["price"] for o in mk.get("outcomes",[])}
+                                hc=out.get(ev["home_team"],0); ac=out.get(ev["away_team"],0); dc=out.get("Draw",0)
+                                res["home_cote"]=round(hc,2); res["away_cote"]=round(ac,2); res["draw_cote"]=round(dc,2); res["favori_home"]=hc<=ac
+                            elif mk.get("key")=="totals":
+                                for o in mk.get("outcomes",[]):
+                                    if o.get("name")=="Over": res["over_cote"]=round(o.get("price",0),2)
+                        if res["home_cote"]>0: break
+                    if res["home_cote"]>0:
+                        cache_odds[cle]=(time.time(),res); return res
+        except: continue
     return {}
 
+def update_historique(m,s):
+    t=time.time()
+    if m not in historique_stats: historique_stats[m]=[]
+    historique_stats[m].append((t,s.copy()))
+    historique_stats[m]=[(a,b) for a,b in historique_stats[m] if t-a<=1800]
 
-def update_historique(m, s):
-    t = time.time()
-    if m not in historique_stats:
-        historique_stats[m] = []
-    historique_stats[m].append((t, s.copy()))
-    historique_stats[m] = [(a, b) for a, b in historique_stats[m] if t - a <= 1800]
+def get_stats_last_10min(m,s):
+    hist=historique_stats.get(m,[])
+    snap=hist[0][1] if hist else None
+    if snap is None: return s
+    skip=["possession_home","possession_away","cartons_jaunes_home","cartons_jaunes_away","cartons_rouges_home","cartons_rouges_away"]
+    return {k:max(0,s[k]-snap[k]) if k not in skip else s[k] for k in s}
 
+def calcul_indice_pression(s,fh):
+    sd="home" if fh else "away"; op="away" if fh else "home"
+    def ratio(a,b): return (a/(a+b))*100 if (a+b)>0 else 50
+    return round(ratio(s["tirs_cadres_"+sd],s["tirs_cadres_"+op])*0.25+ratio(s["corners_"+sd],s["corners_"+op])*0.20+s["possession_"+sd]*0.20+ratio(s["da_"+sd],s["da_"+op])*0.35,1)
 
-def get_stats_last_10min(m, s):
-    hist = historique_stats.get(m, [])
-    snap = hist[0][1] if hist else None
-    if snap is None:
-        return s
-    skip = ['possession_home', 'possession_away', 'cartons_jaunes_home', 'cartons_jaunes_away', 'cartons_rouges_home', 'cartons_rouges_away']
-    return {k: max(0, s[k] - snap[k]) if k not in skip else s[k] for k in s}
+def generer_html_alerte(data,lang="fr"):
+    EN=lang=="en"
+    home=data.get("home","HOME"); away=data.get("away","AWAY")
+    hs=data.get("score_home",0); as_=data.get("score_away",0)
+    mi=data.get("minute",80); ligue=data.get("ligue","Football")
+    fh=data.get("favori_home",True); situation=data.get("situation","mene")
+    s=data.get("stats",{}); s10=data.get("stats_10min",s)
+    ip=data.get("indice_pression",65); odds=data.get("odds",{})
+    fav_s="home" if fh else "away"; out_s="away" if fh else "home"
+    fav_name=home if fh else away
+    mt=("1st Half" if EN else "1ere MT") if mi<=45 else ("2nd Half" if EN else "2eme MT")
+    c_fav=odds.get("home_cote",0) if fh else odds.get("away_cote",0)
+    c_nul=odds.get("draw_cote",0); c_out=odds.get("away_cote",0) if fh else odds.get("home_cote",0)
+    c_over=odds.get("over_cote",0) or 1.85
+    over_line=get_over_line(hs,as_)
+    mr=data.get("minutes_range",str(max(1,mi-10))+"-> "+str(mi))
+    date_str=datetime.now().strftime("%d/%m/%Y %H:%M")
+    c1h,c2h,inh=get_team_info(home); c1a,c2a,ina=get_team_info(away)
+    logo_b64=get_logo_b64()
+    logo_tag='<img src="data:image/png;base64,'+logo_b64+'" class="logo"/>' if logo_b64 else '<div class="logo">SB</div>'
+    yj_h=s.get("cartons_jaunes_home",0); yj_a=s.get("cartons_jaunes_away",0)
+    cr_h=s.get("cartons_rouges_home",0); cr_a=s.get("cartons_rouges_away",0)
+    cr_color="#dc2626" if (cr_h+cr_a)>0 else "#16a34a"
+    alert_icon="&#9917;" if situation=="mene" else "&#129309;"
+    alert_label=("FAVOURITE LOSING" if EN else "FAVORI MENE") if situation=="mene" else ("DRAW" if EN else "MATCH NUL")
+    best_cote=max(c_fav,round(c_fav+0.05,2))
+    title_txt="TRADING ALERT" if EN else "ALERTE TRADING"
+    trade_txt="RECOMMENDED TRADE" if EN else "TRADE CONSEILLE"
+    sofa_txt="Live stats on SofaScore" if EN else "Stats live sur SofaScore"
+    fav_lbl="Favourite" if EN else "Favori"
+    los_lbl="Losing" if EN else "Mene"
 
+    def bar(label,pct,color):
+        pct=int(pct); pa=max(0,100-pct)
+        return f'<div class="bar-item"><div class="bar-label">{label}</div><div class="bar-track"><div class="bar-fill" style="width:{pct}%;background:{color};"></div><span class="bar-pct-home">{pct}%</span><span class="bar-pct-away">{pa}%</span></div></div>'
 
-def creer_image_alerte(data, lang="fr"):
-    W, H = 800, 1200
-    img = Image.new("RGB", (W, H), "#f0f4f8")
-    draw = ImageDraw.Draw(img)
+    def ksrow(lbl,hv,av,sub="",even=True):
+        bg="#13161d" if even else "#111318"
+        sub_h=f'<div class="ks-sub">{sub}</div>' if sub else ""
+        return f'<div class="ks-row" style="background:{bg};"><div class="ks-label">{lbl}{sub_h}</div><div class="ks-home" style="color:{c1h};">{hv}</div><div class="ks-away" style="color:{c1a};">{av}</div></div>'
+
+    def oddsrow(icon,lbl,so,xo,even=True):
+        bg="#13161d" if even else "#111318"
+        best=max(so,xo)
+        sc="#10b981" if so>=best else "#6b7280"
+        xc="#10b981" if xo>=best else "#6b7280"
+        return f'<div class="odds-row" style="background:{bg};"><div class="odds-market">{icon} {lbl}</div><div class="odds-val" style="color:{sc};">{so}</div><div class="odds-val" style="color:{xc};">{xo}</div></div>'
+
+    xg_h=round(s10.get("tirs_cadres_"+fav_s,0)*0.15,1)
+    xg_a=round(s10.get("tirs_cadres_"+out_s,0)*0.15,1)
+    bars_html=(bar("Indice Pression" if not EN else "Pressure",ip,"#dc2626")+bar("Possession",s10.get("possession_"+fav_s,50),"#ea580c")+bar("Tirs" if not EN else "Shots",min(100,s10.get("tirs_"+fav_s,0)*12),"#d97706")+bar("Att. Dang." if not EN else "Dang. Attacks",min(100,s10.get("da_"+fav_s,0)*10),"#db2777")+bar("Momentum",min(100,int(ip)-3),"#7c3aed"))
+    ks_html=(ksrow("Tirs total" if not EN else "Total Shots",s10.get("tirs_"+fav_s,0),s10.get("tirs_"+out_s,0),even=True)+ksrow("Corners",s10.get("corners_"+fav_s,0),s10.get("corners_"+out_s,0),even=False)+ksrow("Att. Dang.",s10.get("da_"+fav_s,0),s10.get("da_"+out_s,0),even=True)+ksrow("Attaques" if not EN else "Attacks",s10.get("coups_francs_"+fav_s,0)+s10.get("da_"+fav_s,0),s10.get("da_"+out_s,0),even=False)+ksrow("xG","%.1f"%xg_h,"%.1f"%xg_a,sub="Buts attendus. >0.5=danger" if not EN else "Exp. goals. >0.5=danger",even=True))
+    odds_html=(oddsrow("&#9917;",fav_name[:16],c_fav,round(c_fav+0.05,2),even=True)+oddsrow("&#129309;","Nul" if not EN else "Draw",c_nul,round(c_nul+0.03,2),even=False)+oddsrow("&#128309;",(away if fh else home)[:16],c_out,round(c_out+0.04,2),even=True)+oddsrow("&#128200;",over_line+" - 1 but de plus" if not EN else over_line+" - 1 more goal",round(c_over,2),round(c_over+0.03,2),even=False))
+
+    return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{{margin:0;padding:0;box-sizing:border-box;}}
+body{{background:#111318;font-family:'Barlow',sans-serif;width:480px;}}
+.header{{background:linear-gradient(135deg,#0f1e3d,#1a3a6b);padding:14px 16px;display:flex;align-items:center;gap:12px;border-bottom:2px solid #2a4a8a;}}
+.logo{{width:52px;height:52px;border-radius:50%;border:2px solid rgba(255,255,255,0.3);object-fit:cover;flex-shrink:0;}}
+.header-title{{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;color:white;letter-spacing:1px;text-transform:uppercase;}}
+.header-sub{{font-size:11px;color:#7a9cc8;margin-top:2px;}}
+.score-section{{background:#16191f;padding:16px;border-bottom:1px solid #1e2330;}}
+.teams-row{{display:flex;align-items:center;justify-content:space-between;gap:8px;}}
+.team{{text-align:center;flex:1;}}
+.team-badge{{width:56px;height:56px;border-radius:50%;margin:0 auto 8px;display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:900;border:3px solid;}}
+.badge-home{{background:{c1h};border-color:{c2h};color:{c2h};}}
+.badge-away{{background:{c1a};border-color:{c2a};color:{c2a};}}
+.team-name{{font-size:13px;font-weight:700;}}
+.team-home .team-name{{color:{c1h};}} .team-home .team-status{{color:{c1h};font-size:10px;margin-top:2px;}}
+.team-away .team-name{{color:{c1a};}} .team-away .team-status{{color:{c1a};font-size:10px;margin-top:2px;}}
+.score-center{{text-align:center;flex-shrink:0;}}
+.score-box{{background:linear-gradient(180deg,#1a3a6b,#0f1e3d);border:2px solid #2a4a8a;border-radius:12px;padding:10px 18px;margin-bottom:8px;}}
+.score-digits{{font-family:'Barlow Condensed',sans-serif;font-size:36px;font-weight:900;color:white;letter-spacing:6px;line-height:1;}}
+.minute-badge{{background:#f59e0b;color:white;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;padding:5px 16px;border-radius:20px;display:inline-block;white-space:nowrap;}}
+.alert-banner{{background:linear-gradient(90deg,#78350f,#92400e);border-left:4px solid #f59e0b;border-right:4px solid #f59e0b;padding:10px 16px;font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:800;color:#fef3c7;text-align:center;text-transform:uppercase;}}
+.cards-row{{display:flex;gap:8px;padding:10px 12px;background:#16191f;border-bottom:1px solid #1e2330;}}
+.card-group{{flex:1;display:flex;align-items:center;gap:8px;background:#1e2330;border-radius:8px;padding:8px 10px;}}
+.card-label{{font-size:11px;color:#7a9cc8;font-weight:600;}}
+.card-badges{{display:flex;align-items:center;gap:4px;margin-left:auto;}}
+.cbadge{{width:26px;height:34px;border-radius:3px 3px 4px 4px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:white;}}
+.yellow-card{{background:#f59e0b;}}
+.vs-sep{{font-size:10px;color:#4a5568;}}
+.section-title{{background:linear-gradient(90deg,#0f1e3d,#1a2a4a);color:#7ab3ff;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:800;text-align:center;padding:7px;letter-spacing:1.5px;text-transform:uppercase;border-top:1px solid #1e2330;border-bottom:1px solid #1e2330;}}
+.stats-section{{background:#111318;padding:10px 12px 6px;}}
+.team-labels{{display:flex;justify-content:space-between;margin-bottom:6px;}}
+.bar-item{{margin-bottom:8px;}}
+.bar-label{{font-size:11px;font-weight:600;color:#8899bb;margin-bottom:3px;text-align:center;}}
+.bar-track{{height:22px;background:#1e2330;border-radius:6px;overflow:hidden;position:relative;}}
+.bar-fill{{height:100%;border-radius:6px;position:absolute;left:0;top:0;}}
+.bar-pct-home{{position:absolute;left:6px;font-size:11px;font-weight:700;color:white;line-height:22px;}}
+.bar-pct-away{{position:absolute;right:6px;font-size:11px;font-weight:600;color:#6b7280;line-height:22px;}}
+.key-stats{{background:#111318;}}
+.ks-header{{display:flex;padding:6px 12px;background:#0d1017;}}
+.ks-header .label{{flex:1;font-size:11px;font-weight:700;color:#4a5568;}}
+.ks-header .home-h{{width:60px;text-align:center;font-size:11px;font-weight:700;color:{c1h};}}
+.ks-header .away-h{{width:60px;text-align:center;font-size:11px;font-weight:700;color:{c1a};}}
+.ks-row{{display:flex;align-items:center;padding:8px 12px;border-bottom:1px solid #1a1d24;}}
+.ks-label{{flex:1;font-size:12px;color:#8899bb;}} .ks-sub{{font-size:10px;color:#4a5568;margin-top:1px;}}
+.ks-home{{width:60px;text-align:center;font-size:18px;font-weight:800;font-family:'Barlow Condensed',sans-serif;}}
+.ks-away{{width:60px;text-align:center;font-size:18px;font-weight:800;font-family:'Barlow Condensed',sans-serif;}}
+.odds-section{{background:#111318;}}
+.odds-header{{display:flex;padding:6px 12px;background:#0d1017;}}
+.odds-header .mkt{{flex:1;font-size:11px;font-weight:700;color:#4a5568;}}
+.odds-header .stake-h{{width:80px;text-align:center;font-size:11px;font-weight:700;color:#10b981;}}
+.odds-header .xbet-h{{width:80px;text-align:center;font-size:11px;font-weight:700;color:#3b82f6;}}
+.odds-row{{display:flex;align-items:center;padding:9px 12px;border-bottom:1px solid #1a1d24;}}
+.odds-market{{flex:1;font-size:12px;color:#c0cce0;font-weight:500;}}
+.odds-val{{width:80px;text-align:center;font-size:17px;font-weight:800;font-family:'Barlow Condensed',sans-serif;}}
+.trade-section{{background:linear-gradient(180deg,#052e16,#14532d);padding:14px 12px;text-align:center;border-top:2px solid #16a34a;}}
+.trade-label{{font-size:11px;color:#86efac;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;}}
+.trade-action{{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:900;color:white;margin-bottom:12px;}}
+.trade-btns{{display:flex;gap:8px;margin-bottom:10px;}}
+.trade-btn{{flex:1;border-radius:10px;padding:10px 8px;display:flex;align-items:center;justify-content:center;gap:6px;}}
+.btn-stake{{background:#059669;border:2px solid #34d399;}}
+.btn-xbet{{background:#1d4ed8;border:2px solid #60a5fa;}}
+.btn-name{{font-size:14px;font-weight:800;color:white;font-family:'Barlow Condensed',sans-serif;display:block;}}
+.btn-odd{{font-size:11px;color:rgba(255,255,255,0.75);display:block;}}
+.sofa-link{{display:inline-block;background:rgba(255,255,255,0.1);color:#86efac;font-size:11px;font-weight:600;padding:6px 16px;border-radius:20px;border:1px solid rgba(255,255,255,0.15);}}
+.trade-footer{{font-size:10px;color:#86efac;opacity:0.5;margin-top:8px;}}
+</style></head><body>
+<div class="header">{logo_tag}<div><div class="header-title">{title_txt} &mdash; SharkBet</div><div class="header-sub">{ligue} &bull; {date_str}</div></div></div>
+<div class="score-section"><div class="teams-row">
+<div class="team team-home"><div class="team-badge badge-home">{inh}</div><div class="team-name">{home[:14]}</div><div class="team-status">{fav_lbl}</div></div>
+<div class="score-center"><div class="score-box"><div class="score-digits">{hs}&ndash;{as_}</div></div><div class="minute-badge">{mi}' &mdash; {mt}</div></div>
+<div class="team team-away"><div class="team-badge badge-away">{ina}</div><div class="team-name">{away[:14]}</div><div class="team-status">{los_lbl}</div></div>
+</div></div>
+<div class="alert-banner">{alert_icon} {alert_label} &mdash; {fav_name}</div>
+<div class="cards-row">
+<div class="card-group"><span class="card-label">&#127 Jaunes</span><div class="card-badges"><div class="cbadge yellow-card">{yj_h}</div><span class="vs-sep">vs</span><div class="cbadge yellow-card">{yj_a}</div></div></div>
+<div class="card-group" style="border:1px solid {cr_color};"><span class="card-label" style="color:{cr_color};">&#128308; Rouges</span><div class="card-badges"><div class="cbadge" style="background:{cr_color};">{cr_h}</div><span class="vs-sep">vs</span><div class="cbadge" style="background:{cr_color};">{cr_a}</div></div></div>
+</div>
+<div class="section-title">&#9201; LAST 10 MIN ({mr})</div>
+<div class="stats-section"><div class="team-labels"><span style="font-size:11px;font-weight:700;color:{c1h};">&#128308; {home[:12]}</span><span style="font-size:11px;font-weight:700;color:{c1a};">{away[:12]} &#128309;</span></div>{bars_html}</div>
+<div class="section-title">&#128202; {"KEY STATS" if EN else "CHIFFRES CLES"} &mdash; LAST 10 MIN</div>
+<div class="key-stats"><div class="ks-header"><span class="label">Stat</span><span class="home-h">{inh}</span><span class="away-h">{ina}</span></div>{ks_html}</div>
+<div class="section-title">&#128185; {"LIVE ODDS" if EN else "COTES LIVE"}</div>
+<div class="odds-section"><div class="odds-header"><span class="mkt">{"Market" if EN else "Marche"}</span><span class="stake-h">Stake</span><span class="xbet-h">1xBet</span></div>{odds_html}</div>
+<div class="trade-section">
+<div class="trade-label">&#9989; {trade_txt}</div>
+<div class="trade-action">BACK {fav_name} @ {best_cote}</div>
+<div class="trade-btns">
+<div class="trade-btn btn-stake"><span style="font-size:16px;">&#127919;</span><span><span class="btn-name">Stake</span><span class="btn-odd">@ {c_fav}</span></span></div>
+<div class="trade-btn btn-xbet"><span style="font-size:16px;">&#128142;</span><span><span class="btn-name">1xBet</span><span class="btn-odd">@ {round(c_fav+0.05,2)}</span></span></div>
+</div>
+<div class="sofa-link">&#128202; {sofa_txt}</div>
+<div class="trade-footer">SharkBet &bull; {date_str}</div>
+</div></body></html>"""
+
+def html_to_png(html_content):
+    with tempfile.NamedTemporaryFile(mode="w",suffix=".html",delete=False,encoding="utf-8") as f:
+        f.write(html_content); html_path=f.name
+    png_path=html_path.replace(".html",".png")
     try:
-        fb = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        fn = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        f22 = ImageFont.truetype(fb, 22)
-        f18 = ImageFont.truetype(fb, 18)
-        f16 = ImageFont.truetype(fn, 16)
-        f14 = ImageFont.truetype(fb, 14)
-        f12 = ImageFont.truetype(fn, 12)
-        f11 = ImageFont.truetype(fn, 11)
-    except Exception:
-        f22 = f18 = f16 = f14 = f12 = f11 = ImageFont.load_default()
-
-    if lang == "en":
-        txt = {
-            "alert": "TRADING ALERT", "favori_mene": "FAVOURITE LOSING",
-            "match_nul": "DRAW", "last10": "LAST 10 MIN",
-            "key_stats": "KEY STATS", "live_odds": "LIVE ODDS",
-            "trade": "RECOMMENDED TRADE", "back": "BACK",
-            "best_odds": "Best odds", "secondhalf": "2nd Half",
-            "halftime": "1st Half", "pression": "Pressure Index",
-            "possession": "Possession", "shots": "Shots",
-            "da": "Dangerous Attacks", "momentum": "Momentum",
-            "total_shots": "Total Shots", "corners": "Corners",
-            "keypasses": "Key Passes", "attacks": "Attacks",
-            "xg": "xG (Expected Goals)",
-            "xg_desc": "Quality of chances. Above 0.5 = real danger",
-            "draw": "Draw", "yellow": "Yellow Cards", "red": "Red Cards",
-            "sofascore": "View on SofaScore"
-        }
-    else:
-        txt = {
-            "alert": "ALERTE TRADING", "favori_mene": "FAVORI MENE",
-            "match_nul": "MATCH NUL", "last10": "LAST 10 MIN",
-            "key_stats": "CHIFFRES CLES", "live_odds": "COTES LIVE",
-            "trade": "TRADE CONSEILLE", "back": "BACK",
-            "best_odds": "Meilleure cote", "secondhalf": "2eme MT",
-            "halftime": "1ere MT", "pression": "Indice Pression",
-            "possession": "Possession", "shots": "Tirs",
-            "da": "Att. Dang.", "momentum": "Momentum",
-            "total_shots": "Tirs total", "corners": "Corners",
-            "keypasses": "Passes cles", "attacks": "Attaques",
-            "xg": "xG (buts attendus)",
-            "xg_desc": "Qualite des occasions. Au-dessus de 0.5 = danger",
-            "draw": "Nul", "yellow": "Cartons jaunes", "red": "Cartons rouges",
-            "sofascore": "Voir sur SofaScore"
-        }
-
-    def rbox(x1, y1, x2, y2, fc, ec=None, lw=0, r=8):
-        draw.rounded_rectangle([x1, y1, x2, y2], radius=r, fill=fc, outline=ec, width=lw)
-
-    def ctext(text, y, font, color, x1=0, x2=W):
-        bb = draw.textbbox((0, 0), text, font=font)
-        tw = bb[2] - bb[0]
-        draw.text(((x2 - x1 - tw) // 2 + x1, y), text, font=font, fill=color)
-
-    date_str = datetime.now().strftime("%d/%m/%Y %H:%M") if lang == "fr" else datetime.now().strftime("%m/%d/%Y %H:%M")
-    home = data.get("home", "HOME")
-    away = data.get("away", "AWAY")
-    hs = data.get("score_home", 0)
-    as_ = data.get("score_away", 0)
-    mi = data.get("minute", 80)
-    ligue = data.get("ligue", "Football")
-    favori_home = data.get("favori_home", True)
-    situation = data.get("situation", "mene")
-    s = data.get("stats", {})
-    s10 = data.get("stats_10min", s)
-    ip = data.get("indice_pression", 65)
-    odds = data.get("odds", {})
-    fav_side = "home" if favori_home else "away"
-    out_side = "away" if favori_home else "home"
-    favori_name = home if favori_home else away
-    mi_temps = txt["halftime"] if mi <= 45 else txt["secondhalf"]
-    cote_fav = odds.get("home_cote", 0) if favori_home else odds.get("away_cote", 0)
-    cote_nul = odds.get("draw_cote", 0)
-    cote_out = odds.get("away_cote", 0) if favori_home else odds.get("home_cote", 0)
-    minutes_range = data.get("minutes_range", str(max(1, mi - 10)) + "' -> " + str(mi) + "'")
-
-    y = 0
-    rbox(0, y, W, 85, "#1e3a5f")
-    try:
-        if os.path.exists(LOGO_PATH):
-            logo = Image.open(LOGO_PATH).convert("RGBA").resize((65, 65))
-            img.paste(logo, (15, 10), logo)
-    except Exception:
-        pass
-    draw.text((95, 18), txt["alert"] + " - SharkBet", font=f22, fill="white")
-    draw.text((95, 50), ligue + "   |   " + date_str, font=f16, fill="#94a3b8")
-    y = 95
-
-    rbox(10, y, W - 10, y + 115, "#f8fafc", ec="#e2e8f0", lw=1)
-    draw.text((25, y + 12), home[:14], font=f18, fill="#dc2626")
-    draw.text((25, y + 38), "Favori" if lang == "fr" else "Favourite", font=f12, fill="#dc2626")
-    aw_w = draw.textbbox((0, 0), away[:14], font=f18)[2]
-    draw.text((W - 25 - aw_w, y + 12), away[:14], font=f18, fill="#2563eb")
-    losing_txt = "Mene" if lang == "fr" else "Losing"
-    lo_w = draw.textbbox((0, 0), losing_txt, font=f12)[2]
-    draw.text((W - 25 - lo_w, y + 38), losing_txt, font=f12, fill="#2563eb")
-    rbox(W // 2 - 65, y + 10, W // 2 + 65, y + 70, "#1e3a5f", r=10)
-    ctext(str(hs) + " - " + str(as_), y + 22, f22, "white")
-    rbox(W // 2 - 60, y + 73, W // 2 + 60, y + 98, "#f59e0b", r=12)
-    ctext(str(mi) + "'  -  " + mi_temps, y + 77, f14, "white")
-    y += 125
-
-    alerte_txt = txt["favori_mene"] + " - " + favori_name if situation == "mene" else txt["match_nul"] + " - " + favori_name
-    rbox(10, y, W - 10, y + 38, "#fef3c7", ec="#f59e0b", lw=2)
-    ctext(alerte_txt, y + 10, f14, "#78350f")
-    y += 48
-
-    rbox(10, y, W // 2 - 5, y + 38, "#fffbeb", ec="#f59e0b", lw=1)
-    draw.text((20, y + 10), txt["yellow"] + ": " + str(s.get("cartons_jaunes_home", 0)) + " vs " + str(s.get("cartons_jaunes_away", 0)), font=f14, fill="#92400e")
-    cr_h = s.get("cartons_rouges_home", 0)
-    cr_a = s.get("cartons_rouges_away", 0)
-    cr_color = "#dc2626" if (cr_h + cr_a) > 0 else "#166534"
-    cr_bg = "#fef2f2" if (cr_h + cr_a) > 0 else "#ecfdf5"
-    rbox(W // 2 + 5, y, W - 10, y + 38, cr_bg, ec=cr_color, lw=1)
-    draw.text((W // 2 + 15, y + 10), txt["red"] + ": " + str(cr_h) + " vs " + str(cr_a), font=f14, fill=cr_color)
-    y += 48
-
-    rbox(10, y, W - 10, y + 28, "#1e3a5f", r=6)
-    ctext(txt["last10"] + "  (" + minutes_range + ")", y + 6, f14, "white")
-    y += 36
-
-    draw.text((25, y + 2), home[:10], font=f12, fill="#dc2626")
-    aw2_w = draw.textbbox((0, 0), away[:10], font=f12)[2]
-    draw.text((W - 25 - aw2_w, y + 2), away[:10], font=f12, fill="#2563eb")
-    y += 18
-
-    bars = [
-        (txt["pression"], ip, "#dc2626"),
-        (txt["possession"], s10.get("possession_" + fav_side, 50), "#ea580c"),
-        (txt["shots"], min(100, s10.get("tirs_" + fav_side, 0) * 12), "#d97706"),
-        (txt["da"], min(100, s10.get("da_" + fav_side, 0) * 10), "#db2777"),
-        (txt["momentum"], min(100, ip - 3), "#7c3aed"),
-    ]
-
-    for label, pct, color in bars:
-        rbox(10, y, W - 10, y + 32, "#ffffff")
-        draw.text((15, y + 8), label, font=f12, fill="#475569")
-        bx, bw, bh = 200, 560, 18
-        by = y + 7
-        rbox(bx, by, bx + bw, by + bh, "#e5e7eb", r=4)
-        fw = int(bw * pct / 100)
-        if fw > 0:
-            rbox(bx, by, bx + fw, by + bh, color, r=4)
-        pct_away = max(0, 100 - int(pct))
-        if fw > 25:
-            draw.text((bx + 4, by + 2), str(int(pct)) + "%", font=f11, fill="white")
-        if (bw - fw) > 25:
-            draw.text((bx + fw + 4, by + 2), str(pct_away) + "%", font=f11, fill="#6b7280")
-        y += 36
-
-    rbox(10, y, W - 10, y + 28, "#1e3a5f", r=6)
-    ctext(txt["key_stats"] + "  (" + txt["last10"] + ")", y + 6, f14, "white")
-    y += 36
-
-    col1, col2, col3 = 20, 500, 660
-    rbox(10, y, W - 10, y + 24, "#f8fafc")
-    draw.text((col1, y + 4), "Stat", font=f12, fill="#6b7280")
-    draw.text((col2, y + 4), home[:6], font=f14, fill="#dc2626")
-    draw.text((col3, y + 4), away[:6], font=f14, fill="#2563eb")
-    y += 26
-
-    key_stats_list = [
-        (txt["total_shots"], s10.get("tirs_" + fav_side, 0), s10.get("tirs_" + out_side, 0)),
-        (txt["corners"], s10.get("corners_" + fav_side, 0), s10.get("corners_" + out_side, 0)),
-        (txt["da"], s10.get("da_" + fav_side, 0), s10.get("da_" + out_side, 0)),
-        (txt["attacks"], s10.get("coups_francs_" + fav_side, 0) + s10.get("da_" + fav_side, 0), s10.get("da_" + out_side, 0)),
-        (txt["xg"], round(s10.get("tirs_cadres_" + fav_side, 0) * 0.15, 1), round(s10.get("tirs_cadres_" + out_side, 0) * 0.15, 1)),
-    ]
-
-    for i, (label, hv, av) in enumerate(key_stats_list):
-        bg = "#ffffff" if i % 2 == 0 else "#f8fafc"
-        extra = 12 if label == txt["xg"] else 0
-        rbox(10, y, W - 10, y + 30 + extra, bg)
-        draw.text((col1, y + 7), label, font=f12, fill="#374151")
-        draw.text((col2, y + 5), str(hv), font=f16, fill="#dc2626")
-        draw.text((col3, y + 5), str(av), font=f16, fill="#2563eb")
-        if label == txt["xg"]:
-            draw.text((col1, y + 22), txt["xg_desc"], font=f11, fill="#9ca3af")
-        y += 32 + extra
-
-    rbox(10, y, W - 10, y + 28, "#1e3a5f", r=6)
-    ctext(txt["live_odds"], y + 6, f14, "white")
-    y += 36
-
-    rbox(10, y, W - 10, y + 24, "#f8fafc")
-    draw.text((20, y + 4), "Market" if lang == "en" else "Marche", font=f12, fill="#6b7280")
-    draw.text((420, y + 4), "Stake", font=f14, fill="#059669")
-    draw.text((580, y + 4), "1xBet", font=f14, fill="#1a56db")
-    y += 26
-
-    odds_rows = [
-        (favori_name[:14], cote_fav, round(cote_fav + 0.05, 2)),
-        (txt["draw"], cote_nul, round(cote_nul + 0.03, 2)),
-        ((away if favori_home else home)[:14], cote_out, round(cote_out + 0.04, 2)),
-    ]
-
-    for i, (label, s_odd, x_odd) in enumerate(odds_rows):
-        bg = "#f8fafc" if i % 2 == 0 else "#ffffff"
-        rbox(10, y, W - 10, y + 30, bg)
-        draw.text((20, y + 7), label, font=f12, fill="#374151")
-        best = max(s_odd, x_odd)
-        draw.text((420, y + 5), str(s_odd), font=f16, fill="#16a34a" if s_odd >= best else "#374151")
-        draw.text((580, y + 5), str(x_odd), font=f16, fill="#16a34a" if x_odd >= best else "#374151")
-        y += 32
-
-    y += 5
-    rbox(0, y, W, y + 130, "#14532d")
-    ctext(txt["trade"], y + 10, f14, "#86efac")
-    best_cote = max(cote_fav, round(cote_fav + 0.05, 2))
-    ctext(txt["back"] + " " + favori_name + " @ " + str(best_cote), y + 32, f22, "white")
-    btn_y = y + 65
-    rbox(20, btn_y, 370, btn_y + 48, "#059669", ec="#34d399", lw=2, r=10)
-    draw.text((35, btn_y + 8), "Stake  @  " + str(cote_fav), font=f16, fill="white")
-    draw.text((35, btn_y + 28), txt["best_odds"], font=f12, fill="#86efac")
-    rbox(W - 370, btn_y, W - 20, btn_y + 48, "#1a56db", ec="#60a5fa", lw=2, r=10)
-    draw.text((W - 355, btn_y + 8), "1xBet  @  " + str(round(cote_fav + 0.05, 2)), font=f16, fill="white")
-    ctext(txt["sofascore"], y + 118, f12, "#86efac")
-
-    buf = io.BytesIO()
-    final_h = min(H, y + 130)
-    img = img.crop((0, 0, W, final_h))
-    img.save(buf, format="PNG", optimize=True)
-    buf.seek(0)
-    return buf.read()
-
+        subprocess.run(["wkhtmltoimage","--width","480","--quality","95","--quiet","--disable-smart-width",html_path,png_path],capture_output=True,timeout=30)
+        if os.path.exists(png_path):
+            with open(png_path,"rb") as f: return f.read()
+    except Exception as e: print("ERR wkhtmltoimage:"+str(e))
+    finally:
+        for p in [html_path,png_path]:
+            try: os.unlink(p)
+            except: pass
+    return None
 
 def scanner():
-    now_str = datetime.now().strftime("%H:%M:%S")
-    print("=" * 50)
-    print("[" + now_str + "] Scan en cours...")
-    matchs = get_matchs_live()
-    print(str(len(matchs)) + " matchs live")
-    count = 0
+    now_str=datetime.now().strftime("%H:%M:%S")
+    print("="*50); print("["+now_str+"] Scan en cours...")
+    matchs=get_matchs_live(); print(str(len(matchs))+" matchs live")
+    count=0
     for ev in matchs:
         try:
-            match_id = ev.get("id")
-            if not match_id:
-                continue
+            match_id=ev.get("id")
+            if not match_id: continue
+            try: mi=int(str(ev.get("time","0")).replace("+","").split("+")[0])
+            except: mi=0
+            if not(CRITERES["minute_debut_1"]<=mi<=CRITERES["minute_fin_1"] or CRITERES["minute_debut_2"]<=mi<=CRITERES["minute_fin_2"]): continue
+            home=ev.get("home_name","?"); away=ev.get("away_name","?")
             try:
-                mi = int(str(ev.get("time", "0")).replace("+", "").split("+")[0])
-            except Exception:
-                mi = 0
-            in_window = (
-                CRITERES["minute_debut_1"] <= mi <= CRITERES["minute_fin_1"] or
-                CRITERES["minute_debut_2"] <= mi <= CRITERES["minute_fin_2"]
-            )
-            if not in_window:
-                continue
-            home = ev.get("home_name", "?")
-            away = ev.get("away_name", "?")
-            try:
-                parts = ev.get("score", "0 - 0").replace(" ", "").split("-")
-                hs = int(parts[0])
-                as_ = int(parts[1])
-            except Exception:
-                hs, as_ = 0, 0
-            ligue = ev.get("competition", {}).get("name", "?") if isinstance(ev.get("competition"), dict) else "?"
-            stats = get_stats(match_id)
-            update_historique(match_id, stats)
-            stats_10min = get_stats_last_10min(match_id, stats)
-            odds = get_odds(home, away)
-            if not odds:
-                continue
-            favori_home = odds.get("favori_home", True)
-            cote_fav = odds.get("home_cote", 0) if favori_home else odds.get("away_cote", 0)
-            if cote_fav < CRITERES["cote_min"]:
-                continue
-            favori_mene = (hs < as_) if favori_home else (as_ < hs)
-            match_nul = (hs == as_)
-            if not favori_mene and not match_nul:
-                continue
-            situation = "mene" if favori_mene else "nul"
-            fav_side = "home" if favori_home else "away"
-            out_side = "away" if favori_home else "home"
-            da_fav = stats_10min.get("da_" + fav_side, 0)
-            tirs_fav = stats_10min.get("tirs_" + fav_side, 0)
-            corners_fav = stats_10min.get("corners_" + fav_side, 0)
-            coups_fav = stats_10min.get("coups_francs_" + fav_side, 0)
-            if da_fav < CRITERES["da_min"]:
-                continue
-            if tirs_fav < CRITERES["tirs_min"]:
-                continue
-            if (corners_fav + coups_fav) < CRITERES["corners_min"]:
-                continue
-            ip = calcul_indice_pression(stats_10min, favori_home)
-            if ip < CRITERES["pression_min"]:
-                continue
-            cle = str(match_id) + "_" + str(hs) + "-" + str(as_) + "_" + str(mi // 5)
-            if cle in alertes_envoyees:
-                continue
-            minutes_range = str(max(1, mi - 10)) + "' -> " + str(mi) + "'"
-            data_alerte = {
-                "home": home, "away": away,
-                "home_logo": None, "away_logo": None,
-                "score_home": hs, "score_away": as_,
-                "minute": mi, "ligue": ligue,
-                "favori_home": favori_home, "situation": situation,
-                "stats": stats, "stats_10min": stats_10min,
-                "indice_pression": ip, "odds": odds,
-                "minutes_range": minutes_range
-            }
-            for lang in ["fr", "en"]:
+                parts=ev.get("score","0 - 0").replace(" ","").split("-"); hs=int(parts[0]); as_=int(parts[1])
+            except: hs=as_=0
+            ligue=ev.get("competition",{}).get("name","?") if isinstance(ev.get("competition"),dict) else "?"
+            stats=get_stats(match_id); update_historique(match_id,stats); stats_10min=get_stats_last_10min(match_id,stats)
+            odds=get_odds(home,away)
+            if not odds: continue
+            favori_home=odds.get("favori_home",True)
+            cote_fav=odds.get("home_cote",0) if favori_home else odds.get("away_cote",0)
+            if cote_fav<CRITERES["cote_min"]: continue
+            favori_mene=(hs<as_) if favori_home else (as_<hs); match_nul=(hs==as_)
+            if not favori_mene and not match_nul: continue
+            situation="mene" if favori_mene else "nul"
+            fav_side="home" if favori_home else "away"; out_side="away" if favori_home else "home"
+            if stats_10min.get("da_"+fav_side,0)<CRITERES["da_min"]: continue
+            if stats_10min.get("tirs_"+fav_side,0)<CRITERES["tirs_min"]: continue
+            if stats_10min.get("corners_"+fav_side,0)+stats_10min.get("coups_francs_"+fav_side,0)<CRITERES["corners_min"]: continue
+            ip=calcul_indice_pression(stats_10min,favori_home)
+            if ip<CRITERES["pression_min"]: continue
+            cle=str(match_id)+"_"+str(hs)+"-"+str(as_)+"_"+str(mi//5)
+            if cle in alertes_envoyees: continue
+            data_alerte={"home":home,"away":away,"score_home":hs,"score_away":as_,"minute":mi,"ligue":ligue,"favori_home":favori_home,"situation":situation,"stats":stats,"stats_10min":stats_10min,"indice_pression":ip,"odds":odds,"minutes_range":str(max(1,mi-10))+"-> "+str(mi)+"'"}
+            fav_name=home if favori_home else away
+            for lang in ["fr","en"]:
                 try:
-                    img_bytes = creer_image_alerte(data_alerte, lang=lang)
-                    envoyer_telegram_image(img_bytes)
-                    print("Alerte " + lang + ": " + home + " vs " + away + " " + str(hs) + "-" + str(as_) + " " + str(mi) + "'")
+                    png=html_to_png(generer_html_alerte(data_alerte,lang=lang))
+                    if png: envoyer_telegram_image(png)
+                    else: raise Exception("PNG failed")
+                    envoyer_telegram_texte("&#127919; <b>Stake:</b> <a href='"+STAKE_LINK+"'>"+STAKE_LINK+"</a>\n&#128142; <b>1xBet:</b> <a href='"+XBET_LINK+"'>"+XBET_LINK+"</a>\n&#128202; <b>SofaScore:</b> <a href='https://www.sofascore.com'>sofascore.com</a>")
+                    print("OK "+lang+": "+home+" vs "+away+" "+str(hs)+"-"+str(as_)+" "+str(mi)+"'")
                 except Exception as e:
-                    print("ERR image " + lang + ": " + str(e))
-                    envoyer_telegram_texte("TRADE: BACK " + (home if favori_home else away) + " @ " + str(cote_fav) + "\n" + home + " " + str(hs) + "-" + str(as_) + " " + away + " " + str(mi) + "'\n" + STAKE_LINK)
+                    print("ERR "+lang+": "+str(e))
+                    envoyer_telegram_texte("BACK "+fav_name+" @ "+str(cote_fav)+"\n"+STAKE_LINK)
                 time.sleep(1)
-            alertes_envoyees.add(cle)
-            count += 1
-            time.sleep(2)
-        except Exception as e:
-            print("ERR: " + str(e))
-    print(str(count) + " alerte(s)")
-
+            alertes_envoyees.add(cle); count+=1; time.sleep(2)
+        except Exception as e: print("ERR:"+str(e))
+    print(str(count)+" alerte(s)")
 
 print("BOT SHARKBET DEMARRE!")
-envoyer_telegram_texte("Bot SharkBet demarre! Alertes visuelles actives.")
-envoyer_telegram_texte("SharkBet Bot Started! Visual alerts active.")
+envoyer_telegram_texte("&#x1F988; SharkBet v4 demarre! Alertes HTML haute qualite.")
+envoyer_telegram_texte("&#x1F988; SharkBet v4 started! HTML high quality alerts.")
 scanner()
 while True:
     time.sleep(30)
     scanner()
-
-
-def calcul_indice_pression(s, fh):
-    sd = "home" if fh else "away"
-    op = "away" if fh else "home"
-
-    def ratio(a, b):
-        return (a / (a + b)) * 100 if (a + b) > 0 else 50
-
-    return round(
-        ratio(s["tirs_cadres_" + sd], s["tirs_cadres_" + op]) * 0.25 +
-        ratio(s["corners_" + sd], s["corners_" + op]) * 0.20 +
-        s["possession_" + sd] * 0.20 +
-        ratio(s["da_" + sd], s["da_" + op]) * 0.35, 1
-    )
