@@ -162,7 +162,15 @@ def update_historique(m, s):
 
 
 def get_stats_last_10min(m, s):
-    def creer_image_alerte(data, lang="fr"):
+    hist = historique_stats.get(m, [])
+    snap = hist[0][1] if hist else None
+    if snap is None:
+        return s
+    skip = ['possession_home', 'possession_away', 'cartons_jaunes_home', 'cartons_jaunes_away', 'cartons_rouges_home', 'cartons_rouges_away']
+    return {k: max(0, s[k] - snap[k]) if k not in skip else s[k] for k in s}
+
+
+def creer_image_alerte(data, lang="fr"):
     W, H = 800, 1200
     img = Image.new("RGB", (W, H), "#f0f4f8")
     draw = ImageDraw.Draw(img)
@@ -492,12 +500,6 @@ scanner()
 while True:
     time.sleep(30)
     scanner()
-hist = historique_stats.get(m, [])
-    snap = hist[0][1] if hist else None
-    if snap is None:
-        return s
-    skip = ["possession_home", "possession_away", "cartons_jaunes_home", "cartons_jaunes_away", "cartons_rouges_home", "cartons_rouges_away"]
-    return {k: max(0, s[k] - snap[k]) if k not in skip else s[k] for k in s}
 
 
 def calcul_indice_pression(s, fh):
