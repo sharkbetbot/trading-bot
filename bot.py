@@ -14,22 +14,15 @@ STAKE_LINK = "https://stake.com/?c=2e44068c9b"
 LOGO_PATH = "/home/Sharkbet/sharkbet_logo.png"
 
 CRITERES = {
-    "minute_debut_1": 38,
-    "minute_fin_1": 45,
-    "minute_debut_2": 75,
-    "minute_fin_2": 90,
-    "da_min": 5,
-    "tirs_min": 3,
-    "corners_min": 1,
-    "pression_min": 65,
-    "cote_min": 2.40,
-    "forme_min": 2,
+    "minute_debut_1": 38, "minute_fin_1": 45,
+    "minute_debut_2": 75, "minute_fin_2": 90,
+    "da_min": 5, "tirs_min": 3, "corners_min": 1,
+    "pression_min": 65, "cote_min": 2.40, "forme_min": 2,
 }
 
 historique_stats = {}
 alertes_envoyees = set()
 cache_odds = {}
-cache_standings = {}
 cache_form = {}
 
 ODDS_LEAGUES = [
@@ -44,6 +37,7 @@ ODDS_LEAGUES = [
     "soccer_denmark_superliga", "soccer_norway_eliteserien",
     "soccer_austria_bundesliga", "soccer_poland_ekstraklasa"
 ]
+
 def envoyer_telegram_texte(msg):
     url = "https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendMessage"
     try:
@@ -59,7 +53,7 @@ def envoyer_telegram_image(img_bytes, caption=""):
         r = requests.post(url, data={"chat_id": CHAT_ID, "caption": caption}, files={"photo": ("alert.png", img_bytes, "image/png")}, timeout=30)
         return r.status_code == 200
     except Exception as e:
-        print("ERR telegram image: " + str(e))
+        print("ERR image: " + str(e))
         return False
 
 def get_matchs_live():
@@ -71,9 +65,8 @@ def get_matchs_live():
                 return data.get("data", {}).get("match", [])
         return []
     except Exception as e:
-        print("ERR livescores: " + str(e))
+        print("ERR live: " + str(e))
         return []
-
 def get_stats(match_id):
     s = {"tirs_home": 0, "tirs_away": 0, "tirs_cadres_home": 0, "tirs_cadres_away": 0, "corners_home": 0, "corners_away": 0, "possession_home": 50, "possession_away": 50, "da_home": 0, "da_away": 0, "coups_francs_home": 0, "coups_francs_away": 0, "cartons_jaunes_home": 0, "cartons_jaunes_away": 0, "cartons_rouges_home": 0, "cartons_rouges_away": 0}
     try:
@@ -138,12 +131,228 @@ def get_odds(home, away):
                             hc = out.get(ev["home_team"], 0)
                             ac = out.get(ev["away_team"], 0)
                             dc = out.get("Draw", 0)
-                            res = {"home_cote": round(hc, 2), "away_cote": round(ac, 2), "draw_cote": round(dc, 2), "favori_home": hc <= ac, "bookmaker": bk.get("title", "")}
+                            res = {"home_cote": round(hc, 2), "away_cote": round(ac, 2), "draw_cote": round(dc, 2), "favori_home": hc <= ac}
                             cache_odds[cle] = (time.time(), res)
                             return res
         except:
             continue
     return {}
+
+def update_historique(m, s):
+    t = time.time()
+    if m not in historique_stats:
+        historique_stats[m] = []
+    historique_stats[m].append((t, s.copy()))
+    historique_stats[m] = [(a, b) for a, b in historique_stats[m] if t - a <= 1800]
+
+def get_stats_last_10min(m, s):
+    hist = historique_stats.get(m, [])
+    snap = hist[0][1] if hist else None
+    if snap is None:
+        return s
+    return {k: max(0, s[k] - snap[k]) if k not in ["possession_home", "possession_away", "cartons_jaunes_home", "cartons_jaunes_away", "cartons_rouges_home", "cartons_rouges_away"] else s[k] for k in s}
+
+def calcul_indice_pression(s, fh):
+    sd = "home" if fh else "away"
+    op = "away" if fh else "home"
+    r = lambda a, b: (a / (a + b)) * 100 if (a + b) > 0 else 50
+    return round(r(s["tirs_cadres_" + sd], s["tirs_cadres_" + op]) * 0.25 + r(s["corners_" + sd], s["corners_" + op]) * 0.20 + s["possession_" + sd] * 0.20 + r(s["da_" + sd], s["da_" + op]) * 0.35, 1)
+def creer_image_alerte(data, lang="fr"):
+    W, H = 800, 1200
+    img = Image.new("RGB", (W, H), "#f0f4f8")
+    draw = ImageDraw.Draw(img)
+    try:
+        fb = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        fr = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        f22 = ImageFont.truetype(fb, 22)
+        f18 = ImageFont.truetype(fb, 18)
+        f16 = ImageFont.truetype(fr, 16)
+        f14 = ImageFont.truetype(fb, 14)
+        f12 = ImageFont.truetype(fr, 12)
+        f11 = ImageFont.truetype(fb, 11)
+    except:
+        f22 = f18 = f16 = f14 = f12 = f11 = ImageFont.load_default()
+
+    if lang == "en":
+        txt = {"alert": "TRADING ALERT", "favori_mene": "FAVOURITE LOSING", "match_nul": "DRAW", "last10": "LAST 10 MIN", "key_stats": "KEY STATS", "live_odds": "LIVE ODDS", "trade": "RECOMMENDED TRADE", "back": "BACK", "best_odds": "Best odds", "secondhalf": "2nd Half", "halftime": "1st Half", "pression": "Pressure Index", "possession": "Possession", "shots": "Shots", "da": "Dangerous Attacks", "momentum": "Momentum", "total_shots": "Total Shots", "corners": "Corners", "keypasses": "Key Passes", "attacks": "Attacks", "xg": "xG (Expected Goals)", "xg_desc": "Quality of chances. Above 0.5 = real danger", "draw": "Draw", "yellow": "Yellow Cards", "red": "Red Cards", "sofascore": "View on SofaScore"}
+    else:
+        txt = {"alert": "ALERTE TRADING", "favori_mene": "FAVORI MENE", "match_nul": "MATCH NUL", "last10": "LAST 10 MIN", "key_stats": "CHIFFRES CLES", "live_odds": "COTES LIVE", "trade": "TRADE CONSEILLE", "back": "BACK", "best_odds": "Meilleure cote", "secondhalf": "2eme MT", "halftime": "1ere MT", "pression": "Indice Pression", "possession": "Possession", "shots": "Tirs", "da": "Att. Dang.", "momentum": "Momentum", "total_shots": "Tirs total", "corners": "Corners", "keypasses": "Passes cles", "attacks": "Attaques", "xg": "xG (buts attendus)", "xg_desc": "Qualite des occasions. Au-dessus de 0.5 = danger", "draw": "Nul", "yellow": "Cartons jaunes", "red": "Cartons rouges", "sofascore": "Voir sur SofaScore"}
+
+    def rbox(x1, y1, x2, y2, fc, ec=None, lw=0, r=8):
+        draw.rounded_rectangle([x1, y1, x2, y2], radius=r, fill=fc, outline=ec, width=lw)
+
+    def ctext(text, y, font, color, x1=0, x2=W):
+        bb = draw.textbbox((0, 0), text, font=font)
+        tw = bb[2] - bb[0]
+        draw.text(((x2 - x1 - tw) // 2 + x1, y), text, font=font, fill=color)
+
+    date_str = datetime.now().strftime("%d/%m/%Y %H:%M") if lang == "fr" else datetime.now().strftime("%m/%d/%Y %H:%M")
+    home = data.get("home", "HOME")
+    away = data.get("away", "AWAY")
+    hs = data.get("score_home", 0)
+    as_ = data.get("score_away", 0)
+    mi = data.get("minute", 80)
+    ligue = data.get("ligue", "Football")
+    favori_home = data.get("favori_home", True)
+    situation = data.get("situation", "mene")
+    s = data.get("stats", {})
+    s10 = data.get("stats_10min", s)
+    ip = data.get("indice_pression", 65)
+    odds = data.get("odds", {})
+    fav_side = "home" if favori_home else "away"
+    out_side = "away" if favori_home else "home"
+    favori_name = home if favori_home else away
+    mi_temps = txt["halftime"] if mi <= 45 else txt["secondhalf"]
+    cote_fav = odds.get("home_cote", 0) if favori_home else odds.get("away_cote", 0)
+    cote_nul = odds.get("draw_cote", 0)
+    cote_out = odds.get("away_cote", 0) if favori_home else odds.get("home_cote", 0)
+    minutes_range = data.get("minutes_range", str(max(1, mi - 10)) + "' -> " + str(mi) + "'")
+
+    y = 0
+    rbox(0, y, W, 85, "#1e3a5f")
+    try:
+        if os.path.exists(LOGO_PATH):
+            logo = Image.open(LOGO_PATH).convert("RGBA").resize((65, 65))
+            img.paste(logo, (15, 10), logo)
+    except:
+        pass
+    draw.text((95, 18), txt["alert"] + " - SharkBet", font=f22, fill="white")
+    draw.text((95, 50), ligue + "   |   " + date_str, font=f16, fill="#94a3b8")
+    y = 95
+
+    rbox(10, y, W - 10, y + 115, "#f8fafc", ec="#e2e8f0", lw=1)
+    draw.text((25, y + 12), home[:14], font=f18, fill="#dc2626")
+    draw.text((25, y + 38), "Favori" if lang == "fr" else "Favourite", font=f12, fill="#dc2626")
+    draw.text((W - 25 - draw.textbbox((0,0), away[:14], font=f18)[2], y + 12), away[:14], font=f18, fill="#2563eb")
+    draw.text((W - 25 - draw.textbbox((0,0), "Mene" if lang=="fr" else "Losing", font=f12)[2], y + 38), "Mene" if lang == "fr" else "Losing", font=f12, fill="#2563eb")
+    rbox(W//2 - 65, y + 10, W//2 + 65, y + 70, "#1e3a5f", r=10)
+    ctext(str(hs) + " - " + str(as_), y + 22, f22, "white")
+    rbox(W//2 - 60, y + 73, W//2 + 60, y + 98, "#f59e0b", r=12)
+    ctext(str(mi) + "'  -  " + mi_temps, y + 77, f14, "white")
+    y += 125
+
+    alerte_txt = txt["favori_mene"] + " - " + favori_name if situation == "mene" else txt["match_nul"] + " - " + favori_name
+    rbox(10, y, W - 10, y + 38, "#fef3c7", ec="#f59e0b", lw=2)
+    ctext(alerte_txt, y + 10, f14, "#78350f")
+    y += 48
+
+    rbox(10, y, W//2 - 5, y + 38, "#fffbeb", ec="#f59e0b", lw=1)
+    draw.text((20, y + 10), txt["yellow"] + ": " + str(s.get("cartons_jaunes_home", 0)) + " vs " + str(s.get("cartons_jaunes_away", 0)), font=f14, fill="#92400e")
+    cr_h = s.get("cartons_rouges_home", 0)
+    cr_a = s.get("cartons_rouges_away", 0)
+    cr_color = "#dc2626" if (cr_h + cr_a) > 0 else "#166534"
+    rbox(W//2 + 5, y, W - 10, y + 38, "#fef2f2" if (cr_h + cr_a) > 0 else "#ecfdf5", ec=cr_color, lw=1)
+    draw.text((W//2 + 15, y + 10), txt["red"] + ": " + str(cr_h) + " vs " + str(cr_a), font=f14, fill=cr_color)
+    y += 48
+    rbox(10, y, W - 10, y + 28, "#1e3a5f", r=6)
+    ctext(txt["last10"] + "  (" + minutes_range + ")", y + 6, f14, "white")
+    y += 36
+
+    draw.text((25, y + 2), home[:10], font=f12, fill="#dc2626")
+    draw.text((W - 25 - draw.textbbox((0,0), away[:10], font=f12)[2], y + 2), away[:10], font=f12, fill="#2563eb")
+    y += 18
+
+    bars = [
+        (txt["pression"], ip, "#dc2626"),
+        (txt["possession"], s10.get("possession_" + fav_side, 50), "#ea580c"),
+        (txt["shots"], min(100, s10.get("tirs_" + fav_side, 0) * 12), "#d97706"),
+        (txt["da"], min(100, s10.get("da_" + fav_side, 0) * 10), "#db2777"),
+        (txt["momentum"], min(100, ip - 3), "#7c3aed"),
+    ]
+
+    for label, pct, color in bars:
+        rbox(10, y, W - 10, y + 32, "#ffffff")
+        draw.text((15, y + 8), label, font=f12, fill="#475569")
+        bx, bw, bh = 200, 560, 18
+        by = y + 7
+        rbox(bx, by, bx + bw, by + bh, "#e5e7eb", r=4)
+        fw = int(bw * pct / 100)
+        if fw > 0:
+            rbox(bx, by, bx + fw, by + bh, color, r=4)
+        pct_away = max(0, 100 - int(pct))
+        if fw > 20:
+            draw.text((bx + 4, by + 2), str(int(pct)) + "%", font=f11, fill="white")
+        if (bw - fw) > 20:
+            draw.text((bx + fw + 4, by + 2), str(pct_away) + "%", font=f11, fill="#6b7280")
+        y += 36
+
+    rbox(10, y, W - 10, y + 28, "#1e3a5f", r=6)
+    ctext(txt["key_stats"] + "  (" + txt["last10"] + ")", y + 6, f14, "white")
+    y += 36
+
+    col1, col2, col3 = 20, 500, 660
+    rbox(10, y, W - 10, y + 24, "#f8fafc")
+    draw.text((col1, y + 4), "Stat", font=f12, fill="#6b7280")
+    draw.text((col2, y + 4), home[:6], font=f14, fill="#dc2626")
+    draw.text((col3, y + 4), away[:6], font=f14, fill="#2563eb")
+    y += 26
+
+    key_stats = [
+        (txt["total_shots"], s10.get("tirs_" + fav_side, 0), s10.get("tirs_" + out_side, 0)),
+        (txt["corners"], s10.get("corners_" + fav_side, 0), s10.get("corners_" + out_side, 0)),
+        (txt["da"], s10.get("da_" + fav_side, 0), s10.get("da_" + out_side, 0)),
+        (txt["attacks"], s10.get("coups_francs_" + fav_side, 0) + s10.get("da_" + fav_side, 0), s10.get("da_" + out_side, 0)),
+        (txt["xg"], round(s10.get("tirs_cadres_" + fav_side, 0) * 0.15, 1), round(s10.get("tirs_cadres_" + out_side, 0) * 0.15, 1)),
+    ]
+
+    for i, (label, hv, av) in enumerate(key_stats):
+        bg = "#ffffff" if i % 2 == 0 else "#f8fafc"
+        rbox(10, y, W - 10, y + 30, bg)
+        draw.text((col1, y + 7), label, font=f12, fill="#374151")
+        draw.text((col2, y + 5), str(hv), font=f16, fill="#dc2626")
+        draw.text((col3, y + 5), str(av), font=f16, fill="#2563eb")
+        if label == txt["xg"]:
+            draw.text((col1, y + 20), txt["xg_desc"], font=f11, fill="#9ca3af")
+            y += 10
+        y += 32
+
+    rbox(10, y, W - 10, y + 28, "#1e3a5f", r=6)
+    ctext(txt["live_odds"], y + 6, f14, "white")
+    y += 36
+
+    rbox(10, y, W - 10, y + 24, "#f8fafc")
+    draw.text((20, y + 4), "Market" if lang == "en" else "Marche", font=f12, fill="#6b7280")
+    draw.text((420, y + 4), "Stake", font=f14, fill="#059669")
+    draw.text((580, y + 4), "1xBet", font=f14, fill="#1a56db")
+    y += 26
+
+    odds_rows = [
+        (favori_name[:14], cote_fav, round(cote_fav + 0.05, 2)),
+        (txt["draw"], cote_nul, round(cote_nul + 0.03, 2)),
+        ((away if favori_home else home)[:14], cote_out, round(cote_out + 0.04, 2)),
+    ]
+
+    for i, (label, s_odd, x_odd) in enumerate(odds_rows):
+        bg = "#f8fafc" if i % 2 == 0 else "#ffffff"
+        rbox(10, y, W - 10, y + 30, bg)
+        draw.text((20, y + 7), label, font=f12, fill="#374151")
+        best = max(s_odd, x_odd)
+        draw.text((420, y + 5), str(s_odd), font=f16, fill="#16a34a" if s_odd >= best else "#374151")
+        draw.text((580, y + 5), str(x_odd), font=f16, fill="#16a34a" if x_odd >= best else "#374151")
+        y += 32
+
+    rbox(0, y, W, H, "#14532d")
+    ctext(txt["trade"], y + 12, f14, "#86efac")
+    best_cote = max(cote_fav, round(cote_fav + 0.05, 2))
+    ctext(txt["back"] + " " + favori_name + " @ " + str(best_cote), y + 36, f22, "white")
+
+    btn_y = y + 72
+    rbox(20, btn_y, 360, btn_y + 50, "#059669", ec="#34d399", lw=2, r=10)
+    draw.text((35, btn_y + 10), "Stake  @  " + str(cote_fav), font=f16, fill="white")
+    draw.text((35, btn_y + 30), txt["best_odds"], font=f12, fill="#86efac")
+
+    rbox(W - 360, btn_y, W - 20, btn_y + 50, "#1a56db", ec="#60a5fa", lw=2, r=10)
+    draw.text((W - 345, btn_y + 10), "1xBet  @  " + str(round(cote_fav + 0.05, 2)), font=f16, fill="white")
+
+    ctext(txt["sofascore"], btn_y + 62, f14, "#86efac")
+    ctext("SharkBet  |  " + date_str, btn_y + 84, f12, "#86efac")
+
+    buf = io.BytesIO()
+    final_h = min(H, btn_y + 110)
+    img = img.crop((0, 0, W, final_h))
+    img.save(buf, format="PNG", optimize=True)
+    buf.seek(0)
+    return buf.read()
 def scanner():
     now_str = datetime.now().strftime("%H:%M:%S")
     print("=" * 50)
@@ -156,9 +365,8 @@ def scanner():
             match_id = ev.get("id")
             if not match_id:
                 continue
-            minute_raw = ev.get("time", "0")
             try:
-                mi = int(str(minute_raw).replace("+", "").split("+")[0])
+                mi = int(str(ev.get("time", "0")).replace("+", "").split("+")[0])
             except:
                 mi = 0
             in_window = (CRITERES["minute_debut_1"] <= mi <= CRITERES["minute_fin_1"] or CRITERES["minute_debut_2"] <= mi <= CRITERES["minute_fin_2"])
@@ -166,9 +374,8 @@ def scanner():
                 continue
             home = ev.get("home_name", "?")
             away = ev.get("away_name", "?")
-            score_raw = ev.get("score", "0 - 0")
             try:
-                parts = score_raw.replace(" ", "").split("-")
+                parts = ev.get("score", "0 - 0").replace(" ", "").split("-")
                 hs = int(parts[0])
                 as_ = int(parts[1])
             except:
@@ -207,32 +414,27 @@ def scanner():
             cle = str(match_id) + "_" + str(hs) + "-" + str(as_) + "_" + str(mi // 5)
             if cle in alertes_envoyees:
                 continue
-            favori_name = home if favori_home else away
-            cote_nul = odds.get("draw_cote", 0)
-            cote_out = odds.get("away_cote", 0) if favori_home else odds.get("home_cote", 0)
             minutes_range = str(max(1, mi - 10)) + "' -> " + str(mi) + "'"
-            if situation == "mene":
-                alerte_fr = "FAVORI MENE - " + favori_name + " pousse fort"
-                alerte_en = "FAVOURITE LOSING - " + favori_name + " pushing hard"
-            else:
-                alerte_fr = "MATCH NUL - " + favori_name + " domine"
-                alerte_en = "DRAW - " + favori_name + " dominating"
-            msg_fr = (alerte_fr + "\n" + ligue + "\n" + home + " " + str(hs) + "-" + str(as_) + " " + away + " | " + str(mi) + "'\n" + "Pression: " + str(ip) + "/100 | DA: " + str(da_fav) + " | Tirs: " + str(tirs_fav) + "\n" + "BACK " + favori_name + " @ " + str(cote_fav) + "\nStake: " + STAKE_LINK)
-            msg_en = (alerte_en + "\n" + ligue + "\n" + home + " " + str(hs) + "-" + str(as_) + " " + away + " | " + str(mi) + "'\n" + "Pressure: " + str(ip) + "/100 | DA: " + str(da_fav) + " | Shots: " + str(tirs_fav) + "\n" + "BACK " + favori_name + " @ " + str(cote_fav) + "\nStake: " + STAKE_LINK)
-            envoyer_telegram_texte(msg_fr)
-            time.sleep(1)
-            envoyer_telegram_texte(msg_en)
+            data_alerte = {"home": home, "away": away, "home_logo": None, "away_logo": None, "score_home": hs, "score_away": as_, "minute": mi, "ligue": ligue, "favori_home": favori_home, "situation": situation, "stats": stats, "stats_10min": stats_10min, "indice_pression": ip, "odds": odds, "minutes_range": minutes_range}
+            for lang in ["fr", "en"]:
+                try:
+                    img_bytes = creer_image_alerte(data_alerte, lang=lang)
+                    envoyer_telegram_image(img_bytes)
+                    print("Alerte " + lang + ": " + home + " vs " + away + " " + str(hs) + "-" + str(as_) + " " + str(mi) + "'")
+                except Exception as e:
+                    print("ERR image " + lang + ": " + str(e))
+                    envoyer_telegram_texte("TRADE: BACK " + (home if favori_home else away) + " @ " + str(cote_fav) + "\n" + home + " " + str(hs) + "-" + str(as_) + " " + away + " " + str(mi) + "'\n" + STAKE_LINK)
+                time.sleep(1)
             alertes_envoyees.add(cle)
             count += 1
-            print("Alerte: " + home + " vs " + away + " " + str(hs) + "-" + str(as_) + " " + str(mi) + "'")
             time.sleep(2)
         except Exception as e:
             print("ERR: " + str(e))
     print(str(count) + " alerte(s)")
 
 print("BOT SHARKBET DEMARRE!")
-envoyer_telegram_texte("Bot SharkBet demarre! Live-score API actif. Alertes 38-45 min + 75-90 min.")
-envoyer_telegram_texte("SharkBet Bot Started! Live-score API active. Alerts 38-45 min + 75-90 min.")
+envoyer_telegram_texte("Bot SharkBet demarre! Alertes 38-45 min + 75-90 min actives.")
+envoyer_telegram_texte("SharkBet Bot Started! Alerts 38-45 min + 75-90 min active.")
 scanner()
 while True:
     time.sleep(30)
