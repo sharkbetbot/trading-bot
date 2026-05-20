@@ -4,14 +4,15 @@ import hashlib
 from datetime import datetime
 
 TELEGRAM_TOKEN = "8601521492:AAGx10bdhu3UeEMAfKh0NlrdDUcxbLK85o8"
-CHAT_ID = "351609302"
+CHAT_ID = "-1003992820078"
 LIVESCORE_KEY = "qgHY8ERxSp9JnkCo"
 LIVESCORE_SECRET = "wI6jj9Z2SRUKDtG3Jn1R2ToVixEGSh4p"
 ODDS_API_KEY = "e610e4b32d5038e6c54a1316a571cda0"
-STAKE_LINK = "https://stake.com/?c=2e44068c9b"
-XBET_LINK = "https://1xbet.com"
+ODDS_API_IO_KEY = "86c2576d00f1b9c165fe5319af141bb0736f76df235a797d6842f7b44108889d"
+STAKE_LINK = "https://stake.com/?c=oZzqrv97"
+XBET_LINK = "https://reffpa.com/L?tag=d_5608015m_1599c_telegram_fr&site=5608015&ad=1599&r=registration"
 
-CRITERES = {"minute_debut_1":38,"minute_fin_1":45,"minute_debut_2":75,"minute_fin_2":90,"da_min":5,"tirs_min":3,"corners_min":1,"pression_min":65,"cote_min":2.40}
+CRITERES = {"minute_debut_1":38,"minute_fin_1":45,"minute_debut_2":75,"minute_fin_2":90,"da_min":0,"tirs_min":0,"corners_min":0,"pression_min":0,"cote_min":0}
 historique_stats = {}
 alertes_envoyees = set()
 cache_odds = {}
@@ -29,6 +30,134 @@ def get_over_line(hs,as_):
 def make_bar(pct,width=10):
     filled=int(pct/100*width)
     return chr(9608)*filled+chr(9617)*(width-filled)
+
+LEAGUE_FLAGS = {
+    "premier league": "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    "championship": "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    "league one": "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    "fa cup": "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    "la liga": "🇪🇸",
+    "copa del rey": "🇪🇸",
+    "serie a": "🇮🇹",
+    "serie b": "🇮🇹",
+    "serie c": "🇮🇹",
+    "bundesliga": "🇩🇪",
+    "ligue 1": "🇫🇷",
+    "ligue 2": "🇫🇷",
+    "eredivisie": "🇳🇱",
+    "eerste divisie": "🇳🇱",
+    "liga portugal": "🇵🇹",
+    "pro league": "🇧🇪",
+    "super lig": "🇹🇷",
+    "champions league": "🇪🇺",
+    "europa league": "🇪🇺",
+    "allsvenskan": "🇸🇪",
+    "eliteserien": "🇳🇴",
+    "superliga": "🇩🇰",
+    "j1 league": "🇯🇵",
+    "j2 league": "🇯🇵",
+    "100 year": "🇯🇵",
+    "k league": "🇰🇷",
+    "super league": "🇨🇳",
+    "mls": "🇺🇸",
+    "major league": "🇺🇸",
+    "liga mx": "🇲🇽",
+    "campeonato": "🇧🇷",
+    "liga profesional": "🇦🇷",
+    "a-league": "🇦🇺",
+    "premiership": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+    "pro league saudi": "🇸🇦",
+    "saudi": "🇸🇦",
+    "division 1": "🇦🇪",
+    "uae": "🇦🇪",
+    "1. hnl": "🇭🇷",
+    "chance liga": "🇨🇿",
+    "prva liga": "🇷🇸",
+    "super liga": "🇷🇸",
+    "1. liga": "🇵🇱",
+    "ekstraklasa": "🇵🇱",
+    "nb i": "🇭🇺",
+    "greek": "🇬🇷",
+    "a lyga": "🇱🇹",
+    "meistriliiga": "🇪🇪",
+    "veikkausliiga": "🇫🇮",
+    "1. division": "🇨🇾",
+    "fifa club world cup": "🌍",
+    "romania": "🇷🇴",
+    "switzerland": "🇨🇭",
+    "austria": "🇦🇹",
+    "ireland": "🇮🇪",
+}
+
+def get_flag(ligue):
+    l = ligue.lower()
+    for k, v in LEAGUE_FLAGS.items():
+        if k in l:
+            return v
+    return "⚽"
+
+
+TEAM_FLAGS = {
+    "paris": "🇫🇷", "psg": "🇫🇷",
+    "arsenal": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "chelsea": "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    "manchester": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "liverpool": "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    "tottenham": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "newcastle": "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    "barcelona": "🇪🇸", "real madrid": "🇪🇸", "atletico": "🇪🇸",
+    "juventus": "🇮🇹", "milan": "🇮🇹", "inter": "🇮🇹", "roma": "🇮🇹", "napoli": "🇮🇹",
+    "bayern": "🇩🇪", "dortmund": "🇩🇪",
+    "benfica": "🇵🇹", "porto": "🇵🇹", "sporting": "🇵🇹",
+    "ajax": "🇳🇱", "psv": "🇳🇱",
+    "celtic": "🏴󠁧󠁢󠁳󠁣󠁴󠁿", "rangers": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+    "lyon": "🇫🇷", "marseille": "🇫🇷", "monaco": "🇫🇷", "lille": "🇫🇷",
+}
+
+def get_team_flag(name, ligue=""):
+    nl = name.lower()
+    for k, v in TEAM_FLAGS.items():
+        if k in nl:
+            return v
+    ll = ligue.lower()
+    if "premier" in ll or "championship" in ll or "fa cup" in ll or "league one" in ll: return "🏴󠁧󠁢󠁥󠁮󠁧󠁿"
+    if "liga" in ll and "port" not in ll and "mx" not in ll and "prof" not in ll: return "🇪🇸"
+    if "serie a" in ll or "serie b" in ll or "serie c" in ll or "coppa" in ll: return "🇮🇹"
+    if "bundesliga" in ll or "2. bundesliga" in ll: return "🇩🇪"
+    if "ligue 1" in ll or "ligue 2" in ll: return "🇫🇷"
+    if "eredivisie" in ll or "eerste" in ll: return "🇳🇱"
+    if "portugal" in ll: return "🇵🇹"
+    if "pro league" in ll and "saudi" not in ll: return "🇧🇪"
+    if "super lig" in ll and "greece" not in ll and "swiss" not in ll and "chin" not in ll: return "🇹🇷"
+    if "champions" in ll or "europa" in ll: return "🇪🇺"
+    if "allsvenskan" in ll: return "🇸🇪"
+    if "eliteserien" in ll: return "🇳🇴"
+    if "superliga" in ll and "serbia" not in ll and "rom" not in ll: return "🇩🇰"
+    if "j1" in ll or "j2" in ll or "japan" in ll or "100 year" in ll: return "🇯🇵"
+    if "k league" in ll or "korea" in ll: return "🇰🇷"
+    if "chinese" in ll or "china" in ll or "super league" in ll: return "🇨🇳"
+    if "mls" in ll or "major league soccer" in ll: return "🇺🇸"
+    if "liga mx" in ll or "mexico" in ll: return "🇲🇽"
+    if "brasileirao" in ll or "campeonato" in ll or "brasil" in ll: return "🇧🇷"
+    if "argentina" in ll or "profesional" in ll: return "🇦🇷"
+    if "a-league" in ll or "australia" in ll: return "🇦🇺"
+    if "premiership" in ll and "england" not in ll: return "🏴󠁧󠁢󠁳󠁣󠁴󠁿"
+    if "saudi" in ll: return "🇸🇦"
+    if "uae" in ll or "emirates" in ll or "division 1" in ll: return "🇦🇪"
+    if "hnl" in ll or "croatia" in ll: return "🇭🇷"
+    if "chance liga" in ll or "czech" in ll: return "🇨🇿"
+    if "prva liga" in ll or "super liga" in ll or "serbia" in ll: return "🇷🇸"
+    if "ekstraklasa" in ll or "1. liga" in ll or "poland" in ll: return "🇵🇱"
+    if "nb i" in ll or "hungary" in ll: return "🇭🇺"
+    if "super league" in ll and "greece" in ll: return "🇬🇷"
+    if "a lyga" in ll or "lithuania" in ll: return "🇱🇹"
+    if "meistriliiga" in ll or "estonia" in ll: return "🇪🇪"
+    if "veikkausliiga" in ll or "finland" in ll: return "🇫🇮"
+    if "cyprus" in ll: return "🇨🇾"
+    if "romania" in ll: return "🇷🇴"
+    if "switzerland" in ll or "swiss" in ll: return "🇨🇭"
+    if "austria" in ll: return "🇦🇹"
+    if "ireland" in ll: return "🇮🇪"
+    if "fifa" in ll or "world cup" in ll: return "🌍"
+    return "⚽"
+
 
 def envoyer_telegram_texte(msg):
     try:
@@ -60,7 +189,10 @@ def get_stats(match_id):
             elif "attempts_on_goal" in t or "shots" in t: s["tirs_home"]=h; s["tirs_away"]=a
             elif "corner" in t: s["corners_home"]=h; s["corners_away"]=a
             elif "possesion" in t or "possession" in t: s["possession_home"]=h; s["possession_away"]=a
-            elif "dangerous" in t: s["da_home"]=h; s["da_away"]=a
+            elif "dangerous" in t:
+                s["da_home"]=h; s["da_away"]=a
+            elif "attempts_on_goal" in t and s["da_home"]==0:
+                s["da_home"]=h; s["da_away"]=a
             elif "free_kick" in t or "freekick" in t: s["coups_francs_home"]=h; s["coups_francs_away"]=a
             elif "yellow" in t: s["cartons_jaunes_home"]=h; s["cartons_jaunes_away"]=a
             elif "red" in t: s["cartons_rouges_home"]=h; s["cartons_rouges_away"]=a
@@ -78,7 +210,7 @@ def get_odds(home,away):
             if r.status_code!=200: continue
             for ev in r.json():
                 h=ev.get("home_team","").lower(); a=ev.get("away_team","").lower()
-                if home.lower()[:4] in h and away.lower()[:4] in a:
+                if (home.lower()[:4] in h or h[:4] in home.lower()) and (away.lower()[:4] in a or a[:4] in away.lower()):
                     res={"home_cote":0,"away_cote":0,"draw_cote":0,"over_cote":0,"favori_home":True}
                     for bk in ev.get("bookmakers",[]):
                         for mk in bk.get("markets",[]):
@@ -95,6 +227,47 @@ def get_odds(home,away):
         except: continue
     return {}
 
+def get_odds_fallback(home, away):
+    try:
+        key = "86c2576d00f1b9c165fe5319af141bb0736f76df235a797d6842f7b44108889d"
+        r = requests.get("https://api.odds-api.io/v3/events",
+            params={"apiKey": key, "sport": "football", "status": "live"},
+            timeout=10)
+        if r.status_code != 200:
+            return {}
+        for ev in r.json():
+            h = ev.get("home", "").lower()
+            a = ev.get("away", "").lower()
+            if (home.lower()[:4] in h or h[:4] in home.lower()) and (away.lower()[:4] in a or a[:4] in away.lower()):
+                match_id = ev.get("id")
+                r2 = requests.get("https://api.odds-api.io/v3/odds",
+                    params={"apiKey": key, "eventId": match_id, "bookmakers": "1xbet,Bet365,Unibet"},
+                    timeout=10)
+                if r2.status_code != 200:
+                    return {}
+                ev2 = r2.json()
+                bookmakers = ev2.get("bookmakers", {})
+                hc = ac = dc = oc = 0
+                for bk_name, markets in bookmakers.items():
+                    for market in markets:
+                        if market.get("name") == "ML":
+                            odds_list = market.get("odds", [{}])
+                            if odds_list:
+                                hc = float(odds_list[0].get("home", 0) or 0)
+                                ac = float(odds_list[0].get("away", 0) or 0)
+                                dc = float(odds_list[0].get("draw", 0) or 0)
+                        elif market.get("name") == "Totals":
+                            odds_list = market.get("odds", [{}])
+                            if odds_list:
+                                oc = float(odds_list[0].get("over", 0) or 0)
+                    if hc > 0:
+                        break
+                if hc > 0:
+                    return {"home_cote": round(hc, 2), "away_cote": round(ac, 2), "draw_cote": round(dc, 2), "over_cote": round(oc, 2), "favori_home": hc <= ac}
+    except Exception as e:
+        print("ERR odds_io: " + str(e))
+    return {}
+
 def update_historique(m,s):
     t=time.time()
     if m not in historique_stats: historique_stats[m]=[]
@@ -103,8 +276,8 @@ def update_historique(m,s):
 
 def get_stats_last_10min(m,s):
     hist=historique_stats.get(m,[])
-    snap=hist[0][1] if hist else None
-    if snap is None: return s
+    if len(hist) < 3: return s
+    snap=hist[0][1]
     skip=["possession_home","possession_away","cartons_jaunes_home","cartons_jaunes_away","cartons_rouges_home","cartons_rouges_away"]
     return {k:max(0,s[k]-snap[k]) if k not in skip else s[k] for k in s}
 
@@ -113,112 +286,105 @@ def calcul_indice_pression(s,fh):
     def ratio(a,b): return (a/(a+b))*100 if (a+b)>0 else 50
     return round(ratio(s["tirs_cadres_"+sd],s["tirs_cadres_"+op])*0.25+ratio(s["corners_"+sd],s["corners_"+op])*0.20+s["possession_"+sd]*0.20+ratio(s["da_"+sd],s["da_"+op])*0.35,1)
 
-def generer_message(data,lang="fr"):
-    EN=lang=="en"
-    home=data.get("home","HOME"); away=data.get("away","AWAY")
-    hs=data.get("score_home",0); as_=data.get("score_away",0)
-    mi=data.get("minute",80); ligue=data.get("ligue","Football")
-    fh=data.get("favori_home",True); situation=data.get("situation","mene")
-    s=data.get("stats",{}); s10=data.get("stats_10min",s)
-    ip=data.get("indice_pression",65); odds=data.get("odds",{})
-    fav_s="home" if fh else "away"; out_s="away" if fh else "home"
-    fav_name=home if fh else away
-    mt=("1st Half" if EN else "1ere MT") if mi<=45 else ("2nd Half" if EN else "2eme MT")
-    c_fav=odds.get("home_cote",0) if fh else odds.get("away_cote",0)
-    c_nul=odds.get("draw_cote",0); c_out=odds.get("away_cote",0) if fh else odds.get("home_cote",0)
-    c_over=odds.get("over_cote",0) or 1.85
-    over_line=get_over_line(hs,as_)
-    mr=data.get("minutes_range",str(max(1,mi-10))+"->"+str(mi))
-    date_str=datetime.now().strftime("%d/%m/%Y %H:%M")
-    yj_h=s.get("cartons_jaunes_home",0); yj_a=s.get("cartons_jaunes_away",0)
-    cr_h=s.get("cartons_rouges_home",0); cr_a=s.get("cartons_rouges_away",0)
-    p10=int(ip); pos10=int(s10.get("possession_"+fav_s,50))
-    shots10=min(100,int(s10.get("tirs_"+fav_s,0)*12))
-    da10=min(100,int(s10.get("da_"+fav_s,0)*10))
-    mom10=min(100,int(ip)-3)
-    xg_h=round(s10.get("tirs_cadres_"+fav_s,0)*0.15,1)
-    xg_a=round(s10.get("tirs_cadres_"+out_s,0)*0.15,1)
-    best_cote=max(c_fav,round(c_fav+0.05,2))
-    def best_str(so,xo):
-        if so>=xo: return "Stake *"+str(so)+"* ✅ | 1xBet "+str(xo)
-        else: return "Stake "+str(so)+" | 1xBet *"+str(xo)+"* ✅"
-    alert_line=("⚠️ *FAVOURITE LOSING*" if EN else "⚠️ *FAVORI MENE*") if situation=="mene" else ("⚠️ *DRAW — FAV PUSHES*" if EN else "⚠️ *MATCH NUL — FAV POUSSE*")
-    sep="┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
-    msg=(
-        ("🦈 *TRADING ALERT — SharkBet*" if EN else "🦈 *ALERTE TRADING — SharkBet*")+"
+def generer_message(data, lang="fr"):
+    EN = lang == "en"
+    home = data.get("home", "HOME")
+    away = data.get("away", "AWAY")
+    hs = data.get("score_home", 0)
+    as_ = data.get("score_away", 0)
+    mi = data.get("minute", 80)
+    ligue = data.get("ligue", "Football")
+    fh = data.get("favori_home", True)
+    situation = data.get("situation", "mene")
+    s = data.get("stats", {})
+    s10 = data.get("stats_10min", s)
+    ip = data.get("indice_pression", 65)
+    odds = data.get("odds", {})
+    fav_s = "home" if fh else "away"
+    out_s = "away" if fh else "home"
+    fav_name = home if fh else away
+    mt = ("1st Half" if EN else "1ere MT") if mi <= 45 else ("2nd Half" if EN else "2eme MT")
+    c_fav = odds.get("home_cote", 0) if fh else odds.get("away_cote", 0)
+    c_nul = odds.get("draw_cote", 0)
+    c_out = odds.get("away_cote", 0) if fh else odds.get("home_cote", 0)
+    c_over = odds.get("over_cote", 0) or 1.85
+    over_line = get_over_line(hs, as_)
+    mr = data.get("minutes_range", str(max(1, mi-10)) + "->" + str(mi))
+    date_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+    yj_h = s.get("cartons_jaunes_home", 0)
+    yj_a = s.get("cartons_jaunes_away", 0)
+    cr_h = s.get("cartons_rouges_home", 0)
+    cr_a = s.get("cartons_rouges_away", 0)
+    p10 = int(ip)
+    pos10 = int(s10.get("possession_" + fav_s, 50))
+    da_val = s10.get("da_" + fav_s, 0)
+    tirs_val = s10.get("tirs_" + fav_s, 0)
+    corners_val = s10.get("corners_" + fav_s, 0)
+    da_out = s10.get("da_" + out_s, 0)
+    tirs_out = s10.get("tirs_" + out_s, 0)
+    corners_out = s10.get("corners_" + out_s, 0)
+    shots10 = min(100, tirs_val * 12)
+    da10 = min(100, da_val * 10)
+    mom10 = min(100, p10 - 3)
+    xg_h = round(s10.get("tirs_cadres_" + fav_s, 0) * 0.15, 1)
+    xg_a = round(s10.get("tirs_cadres_" + out_s, 0) * 0.15, 1)
+    best_cote = max(c_fav, round(c_fav + 0.05, 2))
+    n = chr(10)
+    sep = ""
+    sep = "┄" * 20
+    sep = "┄" * 20
+    def best_str(so, xo):
+        if so >= xo:
+            return "Stake *" + str(so) + "* " + chr(9989) + " | 1xBet " + str(xo)
+        return "Stake " + str(so) + " | 1xBet *" + str(xo) + "* " + chr(9989)
+    line1 = chr(129416) + " *TRADING ALERT" if EN else chr(129416) + " *ALERTE TRADING"
+    line1 += " " + chr(8212) + " SharkBet*"
+    alert_em = chr(9888) + chr(65039)
+    alert_label = alert_em + " *FAVOURITE LOSING*" if situation == "mene" else alert_em + " *DRAW " + chr(8212) + " FAV PUSHES*"
+    if not EN:
+        alert_label = alert_em + " *FAVORI MENE*" if situation == "mene" else alert_em + " *MATCH NUL " + chr(8212) + " FAV POUSSE*"
+    sep_line = "┄" * 20
+    lines = [
+        line1, "",
+        get_flag(ligue) + " *" + ligue + "* " + chr(8226) + " " + date_str,
+        sep_line,
+        get_team_flag(home, ligue) + " *" + home + "*",
+        "        " + str(hs) + " " + chr(8212) + " " + str(as_),
+        get_team_flag(away, ligue) + " *" + away + "*",
+        alert_label + " " + chr(8212) + " *" + fav_name + "*",
+        chr(9201) + chr(65039) + " *" + str(mi) + " MIN " + chr(8212) + " " + mt + "*",
+        chr(127441) + " " + ("Yellow" if EN else "Jaunes") + ": " + str(yj_h) + "-" + str(yj_a) + "  " + chr(8226) + "  " + chr(128308) + " " + ("Red" if EN else "Rouges") + ": " + str(cr_h) + "-" + str(cr_a),
+        sep_line, "",
+        chr(9201) + chr(65039) + " *LAST 10 MIN (" + mr + ")*",
+        "`" + ("Pressure  " if EN else "Pression  ") + " " + make_bar(p10) + "  " + str(p10) + "%`",
+        "`Possession " + make_bar(pos10) + "  " + str(pos10) + "%`",
+        "`" + ("Shots     " if EN else "Tirs      ") + " " + make_bar(shots10) + "   " + str(tirs_val) + " `",
+        "`" + ("Dang.Att. " if EN else "Att. Dang.") + " " + make_bar(da10) + "   " + str(da_val) + " `",
+        "`Momentum  " + make_bar(mom10) + "  " + str(mom10) + "%`",
+        "",
+        chr(127919) + " " + ("Shots" if EN else "Tirs") + " *" + str(tirs_val) + "* vs " + str(tirs_out) + "   " + chr(128208) + " Corners *" + str(corners_val) + "* vs " + str(corners_out),
+        chr(9889) + " DA *" + str(da_val) + "* vs " + str(da_out) + "   " + chr(128201) + " xG *" + str(xg_h) + "* vs " + str(xg_a),
+        "_xG = " + ("expected goals. Above 0.5 = real danger" if EN else "qualite des occasions. Plus de 0.5 = danger") + "_",
+        "",
+        sep_line,
+        chr(128185) + " *" + ("LIVE ODDS" if EN else "COTES LIVE") + "*",
+        "",
+        get_team_flag(fav_name, ligue) + " *" + fav_name + "*   " + best_str(c_fav, round(c_fav + 0.05, 2)),
+        chr(129309) + " *" + ("Draw" if EN else "Nul") + "*        " + best_str(c_nul, round(c_nul + 0.03, 2)),
+        get_team_flag(away if fh else home, ligue) + " *" + (away if fh else home) + "*   " + best_str(c_out, round(c_out + 0.04, 2)),
+        chr(128200) + " *" + over_line + "*   " + best_str(round(c_over, 2), round(c_over + 0.03, 2)),
+        "",
+        sep_line,
+        chr(128994) + " _" + ("RECOMMENDED TRADE" if EN else "TRADE CONSEILLE") + "_",
+        "*BACK " + fav_name + " @ " + str(best_cote) + "*",
+        sep_line,
+        "",
+        chr(127919) + " Stake: https://stake.com/?c=oZzqrv97",
+        chr(128142) + " 1xBet: https://reffpa.com/L?tag=d_5608015m_1599c_telegram_fr&site=5608015&ad=1599&r=registration",
+        chr(128202) + " SofaScore: https://www.sofascore.com",
+    ]
+    return chr(10).join(lines)
 
-"
-        "🏆 "+ligue+" • "+date_str+"
-"
-        +sep+"
-"
-        "🔴 *"+home+"*
-"
-        "        "+str(hs)+" — "+str(as_)+"
-"
-        "🔵 *"+away+"*
-"
-        +alert_line+" — *"+fav_name+"*
-"
-        "⏱ *"+str(mi)+" MIN — "+mt+"*
-"
-        "🟡 "+("Yellow" if EN else "Jaunes")+": "+str(yj_h)+"-"+str(yj_a)+"  •  🔴 "+("Red" if EN else "Rouges")+": "+str(cr_h)+"-"+str(cr_a)+"
-"
-        +sep+"
-
-"
-        "⏱ *LAST 10 MIN ("+mr+")*
-"
-        "`"+("Pressure  " if EN else "Pression  ")+" "+make_bar(p10)+"  "+str(p10)+"%`
-"
-        "`Possession "+make_bar(pos10)+"  "+str(pos10)+"%`
-"
-        "`"+("Shots     " if EN else "Tirs      ")+" "+make_bar(shots10)+"   "+str(s10.get("tirs_"+fav_s,0))+" `
-"
-        "`"+("Dang.Att. " if EN else "Att. Dang.")+" "+make_bar(da10)+"   "+str(s10.get("da_"+fav_s,0))+" `
-"
-        "`Momentum  "+make_bar(mom10)+"  "+str(mom10)+"%`
-
-"
-        "🎯 "+("Shots" if EN else "Tirs")+" *"+str(s10.get("tirs_"+fav_s,0))+"* vs "+str(s10.get("tirs_"+out_s,0))
-        +"   📐 Corners *"+str(s10.get("corners_"+fav_s,0))+"* vs "+str(s10.get("corners_"+out_s,0))+"
-"
-        "⚡ DA *"+str(s10.get("da_"+fav_s,0))+"* vs "+str(s10.get("da_"+out_s,0))
-        +"   📉 xG *"+str(xg_h)+"* vs "+str(xg_a)+"
-"
-        +("_xG = expected goals. Above 0.5 = real danger_" if EN else "_xG = qualite des occasions. Plus de 0.5 = danger_")+"
-
-"
-        +sep+"
-"
-        "💹 *"+("LIVE ODDS" if EN else "COTES LIVE")+"*
-
-"
-        "⚽ *"+fav_name+"*   "+best_str(c_fav,round(c_fav+0.05,2))+"
-"
-        "🤝 *"+("Draw" if EN else "Nul")+"*        "+best_str(c_nul,round(c_nul+0.03,2))+"
-"
-        "🔵 *"+(away if fh else home)+"*   "+best_str(c_out,round(c_out+0.04,2))+"
-"
-        "📈 *"+over_line+"*   "+best_str(round(c_over,2),round(c_over+0.03,2))+"
-
-"
-        +sep+"
-"
-        "🟢 _"+("RECOMMENDED TRADE" if EN else "TRADE CONSEILLE")+"_
-"
-        "*BACK "+fav_name+" @ "+str(best_cote)+"*
-"
-        +sep+"
-
-"
-        "🎯 Stake: "+STAKE_LINK+"
-"
-        "💎 1xBet: "+XBET_LINK+"
-"
-        "📊 SofaScore: https://www.sofascore.com"
-    )
-    return msg
 
 def scanner():
     now_str=datetime.now().strftime("%H:%M:%S")
@@ -238,14 +404,20 @@ def scanner():
             except: hs=as_=0
             ligue=ev.get("competition",{}).get("name","?") if isinstance(ev.get("competition"),dict) else "?"
             stats=get_stats(match_id); update_historique(match_id,stats); stats_10min=get_stats_last_10min(match_id,stats)
+            favori_mene_tmp=(hs<as_); match_nul=(hs==as_)
+            if not favori_mene_tmp and not match_nul: continue
+            fav_side_tmp="home"
+            if stats_10min.get("da_"+fav_side_tmp,0)<CRITERES["da_min"] and stats_10min.get("da_away",0)<CRITERES["da_min"]: continue
+            if stats_10min.get("tirs_"+fav_side_tmp,0)<CRITERES["tirs_min"] and stats_10min.get("tirs_away",0)<CRITERES["tirs_min"]: continue
             odds=get_odds(home,away)
-            if not odds: continue
+            if not odds: odds=get_odds_fallback(home,away)
+            if not odds: odds={"home_cote":0,"away_cote":0,"draw_cote":0,"over_cote":0,"favori_home":True}
+            if odds.get("home_cote",0)==0 and odds.get("away_cote",0)==0: odds["favori_home"]=True
             favori_home=odds.get("favori_home",True)
             cote_fav=odds.get("home_cote",0) if favori_home else odds.get("away_cote",0)
-            if cote_fav<CRITERES["cote_min"]: continue
-            favori_mene=(hs<as_) if favori_home else (as_<hs); match_nul=(hs==as_)
-            if not favori_mene and not match_nul: continue
-            situation="mene" if favori_mene else "nul"
+            if cote_fav>0 and cote_fav<CRITERES["cote_min"]: continue
+            if hs==0 and as_==0: continue
+            situation="mene" if (hs<as_ if favori_home else as_<hs) else "nul"
             fav_side="home" if favori_home else "away"
             if stats_10min.get("da_"+fav_side,0)<CRITERES["da_min"]: continue
             if stats_10min.get("tirs_"+fav_side,0)<CRITERES["tirs_min"]: continue
